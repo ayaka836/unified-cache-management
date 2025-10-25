@@ -29,7 +29,7 @@ import torch
 
 from ucm.store.nfsstore import ucmnfsstore
 from ucm.store.ucmstore import Task, UcmKVStoreBase
-
+from prometheus_logger import DumpState, FetchState, LookupState
 
 @dataclass
 class NfsTask(Task):
@@ -63,6 +63,8 @@ class UcmNfsStore(UcmKVStoreBase):
         return self.store.AllocBatch(block_ids)
 
     def lookup(self, block_ids: List[str]) -> List[bool]:
+        lookup_state = LookupState(total_dump_block_num=len(block_ids))
+        self.prometheus.log_lookup_state(lookup_state)
         return self.store.LookupBatch(block_ids)
 
     def prefetch(self, block_ids: List[str]) -> None:
@@ -76,6 +78,8 @@ class UcmNfsStore(UcmKVStoreBase):
         task_id = self.store.LoadToDevice(
             block_ids, offset, dst_tensor_ptr, dst_tensor_size
         )
+        fetchstate = FetchState(total_dump_block_num=len(block_ids))
+        self.prometheus.log_fetch_state(fetchstate)
         return NfsTask(task_id=task_id)
 
     def dump(
@@ -86,6 +90,8 @@ class UcmNfsStore(UcmKVStoreBase):
         task_id = self.store.DumpFromDevice(
             block_ids, offset, src_tensor_ptr, src_tensor_size
         )
+        dumpstate = DumpState(total_dump_block_num=len(block_ids))
+        self.prometheus.log_dump_state(dumpstate)
         return NfsTask(task_id=task_id)
 
     def fetch_data(

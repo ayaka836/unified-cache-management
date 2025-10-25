@@ -25,6 +25,7 @@
 from abc import ABC, abstractmethod
 from typing import Dict, List, Tuple
 
+from prometheus_logger import PrometheusLogger
 import torch
 
 
@@ -43,6 +44,8 @@ class UcmKVStoreBase(ABC):
 
     def __init__(self, config: Dict):
         self.config = config
+        self.prometheus = PrometheusLogger(labelnames={"store": self.__class__.__name__})
+
 
     @abstractmethod
     def cc_store(self) -> int:
