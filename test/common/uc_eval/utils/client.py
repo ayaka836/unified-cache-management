@@ -9,11 +9,11 @@ from typing import Dict, List, Optional, Union
 
 import requests
 from common.uc_eval.utils.data_class import (
-    ModelConfig,
     MultiTurnDialogRecord,
     RequestRecord,
 )
 from common.uc_eval.utils.utils import PathUtil, get_logger
+from common.models import LLMConnectionConfig
 from tqdm import tqdm
 from transformers import AutoTokenizer, PreTrainedTokenizer
 from typing_extensions import override
@@ -65,19 +65,19 @@ def _excute_with_pool(
 class BaseClient:
     def __init__(
         self,
-        config: ModelConfig,
+        config: LLMConnectionConfig,
         stream: bool = False,
         **kwargs,
     ):
-        self.ip_ports = config.ip_ports
-        self.url = f"http://{self.ip_ports}/v1/chat/completions"
-        self.served_model_name = config.served_model_name
+        self.config = config
+        self.url = f"{config.base_url}/v1/chat/completions"
+        self.served_model_name = config.model
         tokenizer_path = PathUtil.get_datasets_dir_path(config.tokenizer_path)
         self.tokenizer: PreTrainedTokenizer = AutoTokenizer.from_pretrained(
             tokenizer_path
         )
         self.session = requests.Session()
-        self.payload = config.payload
+        self.payload = {}
         self.stream = stream
         if self.stream:
             self.payload.update(
@@ -321,7 +321,7 @@ class BaseClient:
         logger.info("Begin to clear HBM")
         headers = {"Content-Type": "application/json"}
         payload = {}
-        url = f"http://{self.ip_ports}/reset_prefix_cache"
+        url = f"{self.config.base_url}/reset_prefix_cache"
         try:
             response = requests.post(
                 url, json=payload, headers=headers, timeout=TIMEOUT
@@ -371,7 +371,7 @@ class BaseClient:
 
 
 class MultiDialogClient(BaseClient):
-    def __init__(self, config: ModelConfig, stream: bool, **kwargs):
+    def __init__(self, config: LLMConnectionConfig, stream: bool, **kwargs):
         super().__init__(config, stream, **kwargs)
         self.uuid = uuid.uuid4().hex
         self.enable_prefix_cache = kwargs.get("enable_prefix_cache", False)
@@ -464,7 +464,7 @@ class MultiDialogClient(BaseClient):
 
 
 class DocQaClient(BaseClient):
-    def __init__(self, config: ModelConfig, stream: bool, **kwargs):
+    def __init__(self, config: LLMConnectionConfig, stream: bool, **kwargs):
         super().__init__(config, stream, **kwargs)
 
     @override

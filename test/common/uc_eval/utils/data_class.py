@@ -24,38 +24,6 @@ class BenchmarkModeType(str, Enum):
 
 
 @dataclass
-class ModelConfig:
-    ip_ports: str = ""
-    tokenizer_path: str = ""
-    served_model_name: str = ""
-    enable_clear_hbm: bool = False
-    payload: Dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass
-class EvalConfig:
-    data_type: str = ""
-    dataset_file_path: str = ""
-    enable_prefix_cache: str = False
-    parallel_num: int = 1
-    benchmark_mode: str = "evaluate"
-    metrics: Optional[List[str]] = field(default_factory=list)
-    eval_class: Optional[str] = None
-
-
-@dataclass
-class PerfConfig:
-    data_type: str = ""
-    dataset_file_path: str = ""
-    enable_prefix_cache: bool = False
-    parallel_num: int | List[int] = 1
-    prompt_tokens: List[int] = field(default_factory=list)
-    output_tokens: List[int] = field(default_factory=list)
-    prefix_cache_num: List[float] = field(default_factory=list)
-    benchmark_mode: str = ""
-
-
-@dataclass
 class SynthericParams:
     """
     The parameters for synthetic dataset

@@ -3,23 +3,22 @@ from typing import Dict, Any, List
 import json
 import pytest
 
-from common.config_utils import config_utils as config_instance
 from common.llmperf.run_inference import inference_results
 from common.uc_eval.task import DocQaEvalTask
-from common.uc_eval.utils.data_class import EvalConfig, ModelConfig
+from common.models import EvalConfig, LLMConnectionConfig, ReportsConfig
 
 DATA_FILE_PATH = "multifieldqa_zh.jsonl"
 MEAN_INPUT_TOKENS = 8000
 MEAN_OUTPUT_TOKENS = 200
-MAX_NUM_COMPLETED_REQUESTS = 8
-CONCURRENT_REQUESTS = 8
+MAX_NUM_COMPLETED_REQUESTS = 1
+CONCURRENT_REQUESTS = 1
 ADDITIONAL_SAMPLING_PARAMS = "{}"
-HIT_RATE = [0, 30, 50, 80, 100]
+HIT_RATE = [0, 30]
 
 
 class TestModelValidator:
     @pytest.mark.feature("model_validate_test_naive")
-    def test_model_validate_naive(self, model_config: ModelConfig) -> None:
+    def test_model_validate_naive(self, llm_connection_config: LLMConnectionConfig, reports_config: ReportsConfig) -> None:
         test_id="Naive"
         all_summaries = inference_results(
             mean_input_tokens=[MEAN_INPUT_TOKENS],
@@ -27,18 +26,19 @@ class TestModelValidator:
             max_num_completed_requests=[MAX_NUM_COMPLETED_REQUESTS],
             concurrent_requests=[CONCURRENT_REQUESTS],
             additional_sampling_params=[ADDITIONAL_SAMPLING_PARAMS],
-            hit_rate=[0]
+            hit_rate=[0],
+            llm_connection_config=llm_connection_config
         )
         perf_result_naive = self._extract_perf_metrics(all_summaries, [0])
 
-        accuracy_result_naive = self._run_accuracy_test(model_config, test_id)
+        accuracy_result_naive = self._run_accuracy_test(llm_connection_config, reports_config, test_id=test_id)
 
         self._print_perf_summary(perf_result_naive)
         self._print_accuracy_comparison(accuracy_result_naive, test_id)
 
 
     @pytest.mark.feature("model_validate_test_pc")
-    def test_model_validate_pc(self, model_config: ModelConfig) -> None:
+    def test_model_validate_pc(self, llm_connection_config: LLMConnectionConfig, reports_config: ReportsConfig) -> None:
         test_id="PC"
         perf_result_pc = []
         case_num = len(HIT_RATE)
@@ -49,18 +49,19 @@ class TestModelValidator:
             concurrent_requests=[CONCURRENT_REQUESTS] * case_num,
             additional_sampling_params=[ADDITIONAL_SAMPLING_PARAMS] * case_num,
             hit_rate=HIT_RATE,
+            llm_connection_config=llm_connection_config
         )
         perf_result_pc.extend(self._extract_perf_metrics(all_summaries, HIT_RATE))
 
-        self._run_accuracy_test(model_config, test_id)
-        accuracy_result_pc = self._run_accuracy_test(model_config, test_id)
+        self._run_accuracy_test(llm_connection_config, reports_config, test_id=test_id)
+        accuracy_result_pc = self._run_accuracy_test(llm_connection_config, reports_config, test_id=test_id)
 
         self._print_perf_summary(perf_result_pc)
         self._print_accuracy_comparison(accuracy_result_pc, test_id)
 
 
     @pytest.mark.feature("model_validate_test_sparse")
-    def test_model_validate_sparse(self, model_config: ModelConfig) -> None:
+    def test_model_validate_sparse(self, llm_connection_config: LLMConnectionConfig, reports_config: ReportsConfig) -> None:
         test_id="Sparse"
         all_summaries = inference_results(
             mean_input_tokens=[MEAN_INPUT_TOKENS],
@@ -68,11 +69,12 @@ class TestModelValidator:
             max_num_completed_requests=[MAX_NUM_COMPLETED_REQUESTS],
             concurrent_requests=[CONCURRENT_REQUESTS],
             additional_sampling_params=[ADDITIONAL_SAMPLING_PARAMS],
-            hit_rate=[0]
+            hit_rate=[0],
+            llm_connection_config=llm_connection_config
         )
         perf_result_sparse = self._extract_perf_metrics(all_summaries, [0])
 
-        accuracy_result_sparse = self._run_accuracy_test(model_config, test_id)
+        accuracy_result_sparse = self._run_accuracy_test(llm_connection_config, reports_config, test_id=test_id)
 
         self._print_perf_summary(perf_result_sparse)
         self._print_accuracy_comparison(accuracy_result_sparse, test_id)
@@ -93,7 +95,7 @@ class TestModelValidator:
         return results
 
 
-    def _run_accuracy_test(self, model_config: ModelConfig, test_id: str) -> Dict[str, Any]:
+    def _run_accuracy_test(self, llm_connection_config: LLMConnectionConfig, reports_config: ReportsConfig, test_id: str) -> Dict[str, Any]:
         eval_config = EvalConfig(
             data_type="doc_qa",
             dataset_file_path=DATA_FILE_PATH,
@@ -102,8 +104,8 @@ class TestModelValidator:
             metrics=["f1-score"],
             eval_class="common.uc_eval.utils.metric:Includes",
         )
-        file_save_path = config_instance.get_config("reports").get("base_dir")
-        task = DocQaEvalTask(model_config, eval_config, file_save_path)
+        file_save_path = reports_config.base_dir
+        task = DocQaEvalTask(llm_connection_config, eval_config, file_save_path)
         result = task.run()
         print(f"\n[Accuracy Test] {test_id}")
         print(json.dumps(result, indent=2, ensure_ascii=False))

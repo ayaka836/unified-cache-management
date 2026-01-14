@@ -1,8 +1,36 @@
 import os
 import threading
-from typing import Any, Dict
-
+import logging
+from dataclasses import fields, is_dataclass
+from typing import Any, Type, Dict, TypeVar, get_type_hints
 import yaml
+
+logger = logging.getLogger(__name__)
+
+T = TypeVar('T')
+
+def _map_dict_to_dataclass(datacls: Type[T], config_dict: Dict[str, Any]) -> T:
+    """Map a dictionary to a dataclass instance recursively, supporting nested dataclasses."""
+    if not is_dataclass(datacls):
+        raise TypeError(f"{datacls} is not a dataclass")
+
+    field_types = get_type_hints(datacls)
+    init_kwargs = {}
+
+    for field in fields(datacls):
+        key = field.name
+        if key not in config_dict:
+            continue  # rely on dataclass defaults
+
+        value = config_dict[key]
+        field_type = field_types.get(key, Any)
+
+        if is_dataclass(field_type) and isinstance(value, dict):
+            init_kwargs[key] = _map_dict_to_dataclass(field_type, value)
+        else:
+            init_kwargs[key] = value
+
+    return datacls(**init_kwargs)
 
 
 class ConfigUtils:
@@ -12,13 +40,12 @@ class ConfigUtils:
     """
 
     _instance = None
-    _lock = threading.Lock()  # Ensure thread-safe singleton creation
+    _lock = threading.Lock()
 
     def __init__(self):
         self._config = None
 
     def __new__(cls, config_file: str = None):
-        # Double-checked locking
         if cls._instance is None:
             with cls._lock:
                 if cls._instance is None:
@@ -28,59 +55,37 @@ class ConfigUtils:
         return cls._instance
 
     def _init_config(self, config_file: str = None):
-        """Initialize configuration file path and load config"""
+        """Initialize config file path; load lazily."""
         if config_file is None:
             current_dir = os.path.dirname(os.path.abspath(__file__))
             config_file = os.path.join(current_dir, "..", "config.yaml")
-
         self.config_file = os.path.abspath(config_file)
-        self._config = None  # Lazy load
+        self._config = None
 
     def _load_config(self) -> Dict[str, Any]:
-        """Internal method to read configuration from file"""
+        """Load and parse the YAML config file."""
         try:
             with open(self.config_file, "r", encoding="utf-8") as f:
                 return yaml.safe_load(f) or {}
         except FileNotFoundError:
-            print(f"[WARN] Config file not found: {self.config_file}")
+            logger.error("Config file not found: %s", self.config_file)
             return {}
         except yaml.YAMLError as e:
-            print(f"[ERROR] Failed to parse YAML config: {e}")
+            logger.error("Failed to parse YAML config: %s", e)
             return {}
 
-    def read_config(self) -> Dict[str, Any]:
-        """Read configuration file (lazy load)"""
+    def get_component_config(self, component_key: str, config_class: Type[T]) -> T:
+        """Extract sub-config under `component_key` and instantiate it as `config_class`."""
         if self._config is None:
             self._config = self._load_config()
-        return self._config
 
-    def reload_config(self):
-        """Force reload configuration file"""
-        self._config = self._load_config()
-
-    def get_config(self, key: str, default: Any = None) -> Any:
-        """Get top-level configuration item"""
-        config = self.read_config()
-        return config.get(key, default)
-
-    def get_nested_config(self, key_path: str, default: Any = None) -> Any:
-        """Get nested configuration, e.g., 'influxdb.host'"""
-        config = self.read_config()
-        keys = key_path.split(".")
-        value = config
         try:
-            for k in keys:
-                value = value[k]
-            return value
-        except (KeyError, TypeError):
-            return default
+            sub_config = self._config[component_key]
+            return _map_dict_to_dataclass(config_class, sub_config)
+        except Exception as e:
+            logger.error("Failed to load component '%s' into %s: %s", component_key, config_class.__name__, e)
+            raise
 
 
 # Global instance
 config_utils = ConfigUtils()
-
-if __name__ == "__main__":
-    print("DataBase config:", config_utils.get_config("database"))
-    print(
-        "DataBase host:", config_utils.get_nested_config("database.host", "localhost")
-    )

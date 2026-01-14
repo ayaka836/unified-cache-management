@@ -16,21 +16,11 @@ database:
   user: "postgres"
   password: "123456"
 
-models:
-  ip_ports: ""
-  tokenizer_path: ""
-  served_model_name: ""
-  payload: ''
-  enable_clear_hbm: false
-
 # LLM Connection Configuration
 llm_connection:
   model: ""
   server_url: ""
   tokenizer_path: ""
-  stream: true    # stream output
-  ignore_eos: true    # Ignore the returned terminator
-  timeout: 180    # request time out
   extra_info: "vllm_qwen3-32b_pc-gsa"  # extra info, Used to mark different service pull-up parameters
 
 # Environment Pre-Check Configuration

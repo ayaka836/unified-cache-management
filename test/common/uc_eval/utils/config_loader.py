@@ -11,9 +11,6 @@ from common.uc_eval.utils.client import BaseClient, DocQaClient, MultiDialogClie
 from common.uc_eval.utils.data_class import (
     BenchmarkModeType,
     DatasetType,
-    EvalConfig,
-    ModelConfig,
-    PerfConfig,
 )
 from common.uc_eval.utils.dataloader import (
     BaseDataset,
@@ -21,6 +18,7 @@ from common.uc_eval.utils.dataloader import (
     MultiTurnDialogueDataset,
     SyntheticDataset,
 )
+from common.models import LLMConnectionConfig, PerfConfig, EvalConfig
 from common.uc_eval.utils.utils import get_logger
 
 logger = get_logger()
@@ -29,12 +27,12 @@ logger = get_logger()
 class ConfigLoader:
     def __init__(
         self,
-        model_config: ModelConfig,
+        llm_connection_config: LLMConnectionConfig,
         perf_config: PerfConfig = None,
         eval_config: EvalConfig = None,
     ):
 
-        self.model_config = model_config
+        self.llm_connection_config = llm_connection_config
         self.perf_config = perf_config
         self.eval_config = eval_config
         self._valid_config()
@@ -50,7 +48,7 @@ class ConfigLoader:
                 "At least one of perf_config or eval_config must be provided."
             )
 
-        result = self._valid_model_config() and (
+        result = self._valid_llm_connection_config() and (
             self._valid_perf_config()
             if self.perf_config is not None
             else self._valid_eval_config()
@@ -58,18 +56,18 @@ class ConfigLoader:
         logger.info("Complete validation...")
         return result
 
-    def _valid_model_config(self) -> bool:
-        payload = self.model_config.payload
+    def _valid_llm_connection_config(self) -> bool:
+        payload = self.llm_connection_config.payload
         if isinstance(payload, str):
             try:
-                self.model_config.payload = json.loads(payload)
+                self.llm_connection_config.payload = json.loads(payload)
             except Exception as e:
                 raise ValueError(f"Invalid payload JSON format: {e}")
 
         empty_fields = []
-        field_names = [field.name for field in dataclasses.fields(ModelConfig)]
+        field_names = [field.name for field in dataclasses.fields(LLMConnectionConfig)]
         for field_name in field_names:
-            value = getattr(self.model_config, field_name)
+            value = getattr(self.llm_connection_config, field_name)
             if value is None or (isinstance(value, str) and not value.strip()):
                 empty_fields.append(field_name)
 
@@ -177,13 +175,13 @@ class TaskFactory:
     @classmethod
     def create_task(
         cls,
-        model_config: ModelConfig,
+        llm_connection_config: LLMConnectionConfig,
         perf_config: Optional[PerfConfig],
         eval_config: Optional[EvalConfig],
     ) -> Tuple[BaseDataset, BaseClient, BenchmarkBase]:
         stream = False
         data_type = (perf_config or eval_config).data_type
-        tokenizer_path = model_config.tokenizer_path
+        tokenizer_path = llm_connection_config.tokenizer_path
         benchmark_mode = (perf_config or eval_config).benchmark_mode
         stable = benchmark_mode == BenchmarkModeType.STABLE_PREF
         if benchmark_mode in [
@@ -196,6 +194,6 @@ class TaskFactory:
             client_kwargs["enable_prefix_cache"] = perf_config.enable_prefix_cache
         return (
             cls._dataset[data_type](tokenizer_path),
-            cls._client[data_type](model_config, stream, **client_kwargs),
+            cls._client[data_type](llm_connection_config, stream, **client_kwargs),
             cls._benchmark[benchmark_mode](stable if perf_config else eval_config),
         )

@@ -63,9 +63,9 @@ def _get_db():
             return _db_instance
 
         db_config = _get_db_config()
-        _db_enabled = db_config.get("enabled", False)
+        _db_enabled = db_config.enabled
 
-        backup_str = db_config.get("backup", "results/")
+        backup_str = db_config.backup
         _backup_path = Path(backup_str).resolve()
         _backup_path.mkdir(parents=True, exist_ok=True)
         logger.info(f"Backup directory set to: {_backup_path}")
@@ -78,11 +78,11 @@ def _get_db():
 
         try:
             _db_instance = PostgresqlDatabase(
-                db_config.get("name", "test_db"),
-                user=db_config.get("user", "postgres"),
-                password=db_config.get("password", ""),
-                host=db_config.get("host", "localhost"),
-                port=db_config.get("port", 5432),
+                db_config.name,
+                user=db_config.user,
+                password=db_config.password,
+                host=db_config.host,
+                port=db_config.port,
             )
             logger.info(
                 f"PostgreSQL database instance created for: {_db_instance.database}"
@@ -96,9 +96,9 @@ def _get_db():
 
 def _get_db_config():
     """Wrapper to get config without early peewee dependency."""
-    from common.config_utils import config_utils as config_instance
+    from common.models import database_config
 
-    return config_instance.get_config("database", {})
+    return database_config
 
 
 def _set_test_build_id(build_id: Optional[str] = None) -> None:
@@ -136,7 +136,7 @@ def write_to_db(table_name: str, data: Dict[str, Any]) -> bool:
 
     # Early exit if DB disabled
     db_config = _get_db_config()
-    if not db_config.get("enabled", False):
+    if not db_config.enabled:
         _backup_to_file(table_name, data)
         return False
 
@@ -209,7 +209,7 @@ def database_connection(build_id: str) -> None:
     _set_test_build_id(build_id)
 
     db_config = _get_db_config()
-    if not db_config.get("enabled", False):
+    if not db_config.enabled:
         logger.info("Database connection skipped because enabled=false.")
         return
 

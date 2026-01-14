@@ -5,12 +5,12 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 from common.uc_eval.utils.data_class import (
-    EvalConfig,
     LatencyStatistics,
     MultiTurnDialogRecord,
     RequestRecord,
 )
 from common.uc_eval.utils.utils import get_logger
+from common.models import EvalConfig
 from tqdm import tqdm
 
 logger = get_logger()

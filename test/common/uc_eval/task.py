@@ -2,18 +2,16 @@ import time
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Union
 
-from common.uc_eval.utils.config_loader import ConfigLoader, TaskFactory
+from common.uc_eval.utils.config_loader import TaskFactory
 from common.uc_eval.utils.data_class import (
     BenchmarkModeType,
-    EvalConfig,
     LatencyStatistics,
-    ModelConfig,
     MultiTurnDialogRecord,
-    PerfConfig,
     RequestRecord,
     SynthericParams,
 )
 from common.uc_eval.utils.utils import FileUtil, PathUtil, get_current_time, get_logger
+from common.models import PerfConfig, EvalConfig, LLMConnectionConfig
 
 MS_SCALE = 1000
 BAD_COMPLETION_TOKENS_THR = 20
@@ -94,15 +92,14 @@ CASE_EVAL_CSV_HEADER = [
 class BaseTask(ABC):
     def __init__(
         self,
-        model_config: ModelConfig,
+        llm_connection_config: LLMConnectionConfig,
         perf_config: PerfConfig = None,
         eval_config: EvalConfig = None,
         save_to_excel: bool = True,
         file_save_path: str = None,
     ):
-        ConfigLoader(model_config, perf_config, eval_config)
         self.current_time = get_current_time()
-        self.model_config = model_config
+        self.llm_connection_config = llm_connection_config
         self.perf_config = perf_config
         self.eval_config = eval_config
         common_config = perf_config if perf_config else eval_config
@@ -116,7 +113,7 @@ class BaseTask(ABC):
         )
 
         self.dataset, self.client, self.benchmark = TaskFactory.create_task(
-            model_config, perf_config, eval_config
+            llm_connection_config, perf_config, eval_config
         )
 
     def run(self):
@@ -227,17 +224,17 @@ class BaseTask(ABC):
 class SyntheticPerfTask(BaseTask):
     def __init__(
         self,
-        model_config: ModelConfig,
+        llm_connection_config: LLMConnectionConfig,
         perf_config: PerfConfig,
         file_save_path: str,
         stable_rate: int = 5,
     ):
         super().__init__(
-            model_config=model_config,
+            llm_connection_config=llm_connection_config,
             perf_config=perf_config,
             file_save_path=file_save_path,
         )
-        self.enable_clear_hbm = model_config.enable_clear_hbm
+        self.enable_clear_hbm = llm_connection_config.enable_clear_hbm
         self.prompt_tokens = perf_config.prompt_tokens
         self.output_tokens = perf_config.output_tokens
         self.prefix_cache_num = perf_config.prefix_cache_num
@@ -327,10 +324,10 @@ class SyntheticPerfTask(BaseTask):
 
 class MultiTurnDialogPerfTask(BaseTask):
     def __init__(
-        self, model_config: ModelConfig, perf_config: PerfConfig, file_save_path: str
+        self, llm_connection_config: LLMConnectionConfig, perf_config: PerfConfig, file_save_path: str
     ):
         super().__init__(
-            model_config=model_config,
+            llm_connection_config=llm_connection_config,
             perf_config=perf_config,
             file_save_path=file_save_path,
         )
@@ -350,15 +347,15 @@ class MultiTurnDialogPerfTask(BaseTask):
 
 class DocQaPerfTask(BaseTask):
     def __init__(
-        self, model_config: ModelConfig, perf_config: PerfConfig, file_save_path: str
+        self, llm_connection_config: LLMConnectionConfig, perf_config: PerfConfig, file_save_path: str
     ):
         super().__init__(
-            model_config=model_config,
+            llm_connection_config=llm_connection_config,
             perf_config=perf_config,
             file_save_path=file_save_path,
         )
         self.dataset_file_path = perf_config.dataset_file_path
-        self.max_tokens = model_config.payload.get("max_tokens")
+        self.max_tokens = perf_config.max_tokens
 
     def process(self):
         cases_list = self.dataset.prepare_data(self.dataset_file_path)
@@ -379,15 +376,15 @@ class DocQaPerfTask(BaseTask):
 
 class DocQaEvalTask(BaseTask):
     def __init__(
-        self, model_config: ModelConfig, eval_config: EvalConfig, file_save_path: str
+        self, llm_connection_config: LLMConnectionConfig, eval_config: EvalConfig, file_save_path: str
     ):
         super().__init__(
-            model_config=model_config,
+            llm_connection_config=llm_connection_config,
             eval_config=eval_config,
             file_save_path=file_save_path,
         )
         self.dataset_file_path = eval_config.dataset_file_path
-        self.max_tokens = model_config.payload.get("max_tokens")
+        self.max_tokens = eval_config.max_tokens
         self.eval_cls = eval_config.eval_class
 
     def process(self):

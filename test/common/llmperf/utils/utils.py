@@ -143,7 +143,7 @@ def flatten_dict(d, parent_key="", sep="_"):
     return dict(items)
 
 
-def reset_prefill_cache(env, server_url):
+def reset_prefill_cache(server_url):
     """
     prefix cache / HBM
     Param：
@@ -155,7 +155,6 @@ def reset_prefill_cache(env, server_url):
     try:
         result = subprocess.run(
             ["curl", "-X", "POST", reset_url, "-s", "-f"],
-            env=env,
             check=False,
             capture_output=True,
             text=True,

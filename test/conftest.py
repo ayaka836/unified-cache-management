@@ -4,11 +4,10 @@ import datetime as dt
 import platform as pf
 import sys
 from pathlib import Path
-
 import pytest
 from common.config_utils import config_utils as config_instance
 from common.db_utils import database_connection, write_to_db
-from common.uc_eval.utils.data_class import ModelConfig
+from common import models
 
 # ---------------- Constants ----------------
 PRJ_ROOT = Path(__file__).resolve().parent
@@ -66,10 +65,10 @@ def _get_marker_args(item, marker_name):
 
 # ---------------- Report Setup ----------------
 def _prepare_report_dir(config: pytest.Config) -> Path:
-    cfg = config_instance.get_config("reports", {})
-    base_dir = Path(cfg.get("base_dir", "reports"))
-    prefix = cfg.get("directory_prefix", "pytest")
-    if cfg.get("use_timestamp", False):
+    reports_cfg = models.reports_config
+    base_dir = Path(reports_cfg.base_dir)
+    prefix = reports_cfg.directory_prefix
+    if reports_cfg.use_timestamp:
         ts = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
         report_dir = base_dir / f"{prefix}_{ts}"
     else:
@@ -79,15 +78,15 @@ def _prepare_report_dir(config: pytest.Config) -> Path:
 
 
 def _setup_html_report(config: pytest.Config, report_dir: Path) -> None:
-    reports_config = config_instance.get_config("reports", {})
-    html_cfg = reports_config.get("html", {})
-    if not html_cfg.get("enabled", True):
+    reports_cfg = models.reports_config
+    html_cfg = reports_cfg.html
+    if not html_cfg.enabled:
         if hasattr(config.option, "htmlpath"):
             config.option.htmlpath = None
         print("HTML report disabled according to config.yaml")
         return
 
-    html_filename = html_cfg.get("filename", "report.html")
+    html_filename = html_cfg.filename
     config.option.htmlpath = str(report_dir / html_filename)
     config.option.self_contained_html = True
     print("HTML report enabled")
@@ -160,8 +159,17 @@ def pytest_runtest_logreport(report):
 
 
 @pytest.fixture(scope="session")
-def model_config() -> ModelConfig:
-    cfg = config_instance.get_config("models") or {}
-    field_names = [field.name for field in dataclasses.fields(ModelConfig)]
-    kwargs = {k: v for k, v in cfg.items() if k in field_names and v is not None}
-    return ModelConfig(**kwargs)
+def reports_config():
+    return models.reports_config
+
+@pytest.fixture(scope="session")
+def database_config():
+    return models.database_config
+
+@pytest.fixture(scope="session")
+def llm_connection_config():
+    return models.llm_connection_config
+
+@pytest.fixture(scope="session")
+def env_precheck_config():
+    return models.env_precheck_config

@@ -10,7 +10,7 @@ from common.uc_eval.task import (
     MultiTurnDialogPerfTask,
     SyntheticPerfTask,
 )
-from common.uc_eval.utils.data_class import ModelConfig, PerfConfig
+from common.models import LLMConnectionConfig, PerfConfig, ReportsConfig
 
 perf_scenarios = [
     # (mean_in, mean_out, max_req, concurrent, sampling, hit_rate)
@@ -123,10 +123,10 @@ sync_perf_cases = [
 @pytest.mark.parametrize("perf_config", sync_perf_cases)
 @export_vars
 def test_sync_perf(
-    perf_config: PerfConfig, model_config: ModelConfig, request: pytest.FixtureRequest
+    perf_config: PerfConfig, llm_connection_config: LLMConnectionConfig, reports_config: ReportsConfig, request: pytest.FixtureRequest
 ):
-    file_save_path = config_instance.get_config("reports").get("base_dir")
-    task = SyntheticPerfTask(model_config, perf_config, file_save_path)
+    file_save_path = reports_config.base_dir
+    task = SyntheticPerfTask(llm_connection_config, perf_config, file_save_path)
     result = task.run()
     return {"_name": request.node.callspec.id, "_proj": result}
 
@@ -150,10 +150,10 @@ multiturn_dialogue_perf_cases = [
 @pytest.mark.parametrize("perf_config", multiturn_dialogue_perf_cases)
 @export_vars
 def test_multiturn_dialogue_perf(
-    perf_config: PerfConfig, model_config: ModelConfig, request: pytest.FixtureRequest
+    perf_config: PerfConfig, llm_connection_config: LLMConnectionConfig, reports_config: ReportsConfig, request: pytest.FixtureRequest
 ):
-    file_save_path = config_instance.get_config("reports").get("base_dir")
-    task = MultiTurnDialogPerfTask(model_config, perf_config, file_save_path)
+    file_save_path = reports_config.base_dir
+    task = MultiTurnDialogPerfTask(llm_connection_config, perf_config, file_save_path)
     result = task.run()
     return {"_name": request.node.callspec.id, "_data": result}
 
@@ -177,9 +177,9 @@ doc_qa_perf_cases = [
 @pytest.mark.parametrize("perf_config", doc_qa_perf_cases)
 @export_vars
 def test_doc_qa_perf(
-    perf_config: PerfConfig, model_config: ModelConfig, request: pytest.FixtureRequest
+    perf_config: PerfConfig, llm_connection_config: LLMConnectionConfig, reports_config: ReportsConfig, request: pytest.FixtureRequest
 ):
-    file_save_path = config_instance.get_config("reports").get("base_dir")
-    task = DocQaPerfTask(model_config, perf_config, file_save_path)
+    file_save_path = reports_config.base_dir
+    task = DocQaPerfTask(llm_connection_config, perf_config, file_save_path)
     result = task.run()
     return {"_name": request.node.callspec.id, "_data": result}

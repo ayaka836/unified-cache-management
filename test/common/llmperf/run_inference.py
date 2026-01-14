@@ -7,6 +7,7 @@ from typing import Any, Dict, List
 import yaml
 from common.llmperf.utils.token_benchmark import run_token_benchmark
 from common.llmperf.utils.utils import reset_prefill_cache
+from common.models import LLMConnectionConfig
 
 
 def run_test_cases(
@@ -30,9 +31,8 @@ def run_test_cases(
     failed_case = []
 
     # Clear proxy environment variables
-    env = os.environ.copy()
-    env.pop("http_proxy", None)
-    env.pop("https_proxy", None)
+    os.environ.pop("http_proxy", None)
+    os.environ.pop("https_proxy", None)
 
     for i, (
         mean_input,
@@ -54,7 +54,7 @@ def run_test_cases(
     ):
         # for i, case in enumerate(mean_input_tokens):
         print(f"\n>>> Executing test case {i} <<<")
-        reset_prefill_cache(env, server_url)
+        reset_prefill_cache(server_url)
         # Use a fixed random_seed for each test to control PC hit_rate
         random_seed = random.randint(1, 100000)
 
@@ -104,7 +104,7 @@ def run_test_cases(
                     tokenizer_path=tokenizer_path,
                     user_metadata={"case_idx": i, "phase": "prefill"},
                 )
-                reset_prefill_cache(env, server_url)
+                reset_prefill_cache(server_url)
                 # Then run normal mode
                 print("[INFO] Prefill completed, switching to normal mode execution")
                 summary = run_token_benchmark(
@@ -137,49 +137,38 @@ def inference_results(
     mean_output_tokens,
     max_num_completed_requests,
     concurrent_requests,
-    additional_sampling_params,
     hit_rate,
+    llm_connection_config: LLMConnectionConfig,
+    stddev_input_tokens: int = 0,
+    stddev_output_tokens: int = 0,
+    llm_api: str = "openai",
+    additional_sampling_params: dict = {}
 ):
-    config_file = Path(__file__).parent.parent.parent / "config.yaml"
     print("[INFO] Initialization complete, starting main process")
-    print(f"[INFO] Reading configuration file: {config_file}")
-    with open(config_file, "r", encoding="utf-8") as f:
-        config = yaml.safe_load(f)
-        llm_api = config.get("llm_connection", {}).get("llm_api", "openai")
-        model = config.get("llm_connection", {}).get("model", "")
-        test_timeout_s = config.get("llm_connection", {}).get("test_timeout_s", 60000)
-        stddev_input_tokens = config.get("llm_connection", {}).get(
-            "stddev_input_tokens", 0
-        )
-        stddev_output_tokens = config.get("llm_connection", {}).get(
-            "stddev_output_tokens", 0
-        )
-        timestamp_dir = Path("results")
-        timestamp_dir.mkdir(parents=True, exist_ok=True)
-        server_url = config.get("llm_connection", {}).get("server_url", "")
-        tokenizer_path = config.get("llm_connection", {}).get("tokenizer_path", "")
-        print(f"[INFO] Created results directory: {timestamp_dir}")
+    timestamp_dir = Path("results")
+    timestamp_dir.mkdir(parents=True, exist_ok=True)
+    print(f"[INFO] Created results directory: {timestamp_dir}")
 
-        all_summaries, failed_cases = run_test_cases(
-            llm_api,
-            model,
-            test_timeout_s,
-            max_num_completed_requests,
-            concurrent_requests,
-            mean_input_tokens,
-            stddev_input_tokens,
-            mean_output_tokens,
-            stddev_output_tokens,
-            additional_sampling_params,
-            timestamp_dir,
-            server_url,
-            tokenizer_path,
-            hit_rate,
-        )
-        total = len(mean_input_tokens)
-        print(
-            f"\n[INFO] All tests completed! Success: {total - len(failed_cases)}/{total}"
-        )
-        if failed_cases:
-            print(f"[WARN] Failed case indices: {failed_cases}")
+    all_summaries, failed_cases = run_test_cases(
+        llm_api,
+        llm_connection_config.model,
+        llm_connection_config.timeout,
+        max_num_completed_requests,
+        concurrent_requests,
+        mean_input_tokens,
+        stddev_input_tokens,
+        mean_output_tokens,
+        stddev_output_tokens,
+        additional_sampling_params,
+        timestamp_dir,
+        llm_connection_config.base_url,
+        llm_connection_config.tokenizer_path,
+        hit_rate,
+    )
+    total = len(mean_input_tokens)
+    print(
+        f"\n[INFO] All tests completed! Success: {total - len(failed_cases)}/{total}"
+    )
+    if failed_cases:
+        print(f"[WARN] Failed case indices: {failed_cases}")
     return all_summaries
