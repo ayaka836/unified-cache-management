@@ -39,6 +39,7 @@ void Log(Level lv, const SourceLocation& loc, fmt::format_string<Args...> fmt, A
 void Log(Level&& lv, std::string file, std::string func, int line, std::string&& msg);
 void Setup(const std::string& path, int max_files, int max_size);
 void Flush();
+bool isEnabledFor(Level lv);
 
 }  // namespace UC::Logger
 #define UC_SOURCE_LOCATION {__FILE__, __FUNCTION__, __LINE__}
