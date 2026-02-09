@@ -4,6 +4,10 @@ import importlib.abc
 import importlib.util
 from collections import defaultdict
 
+from ucm.logger import init_logger
+
+logger = init_logger(__name__)
+
 # Store callbacks for specific modules
 _POST_IMPORT_HOOKS = defaultdict(list)
 
@@ -117,9 +121,18 @@ def patch_dataclass_fields(target_cls, src_cls, *,
 
     return target_cls
 
-def get_replace_wrapper(new_func):
+def _get_replace_wrapper(new_func):
     def wrapper(wrapped, instance, args, kwargs):
         if instance is not None:
             return new_func(instance, *args, **kwargs)
         return new_func(*args, **kwargs)
     return wrapper
+
+def patch_or_inject(target_obj, func_name, replacement_func):
+
+    if hasattr(target_obj, func_name):
+        wrapt.wrap_function_wrapper(target_obj, func_name, _get_replace_wrapper(replacement_func))
+        logger.debug(f"Wrapped: {getattr(target_obj, '__name__', 'module')}.{func_name}")
+    else:
+        setattr(target_obj, func_name, replacement_func)
+        logger.debug(f"Injected: {getattr(target_obj, '__name__', 'module')}.{func_name}")

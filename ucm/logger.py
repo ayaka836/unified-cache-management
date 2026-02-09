@@ -42,7 +42,7 @@ LevelMap = {
 }
 
 
-class Logger:
+class Logger(logging.Logger):
     def __init__(self, name: str = "UC"):
         self.name = name
         log_path, log_max_files, log_max_size = self._get_log_config()
@@ -142,6 +142,32 @@ class Logger:
 
 def init_logger(name: str = "UC") -> Logger:
     return Logger(name)
+
+class UCMBridge:
+    
+    @staticmethod
+    def log_record_to_ucm(record: logging.LogRecord):
+        level = LevelMap.get(record.levelno, ucmlogger.Level.INFO)
+        msg = record.getMessage() 
+        
+        if record.exc_info:
+            msg += "\n" + Logger.format_exception(record.exc_info)
+        ucmlogger.log(
+            level,
+            os.path.basename(record.pathname),
+            record.funcName,
+            record.lineno,
+            msg
+        )
+
+
+        
+    
+class UCMHandler(logging.Handler):
+    def emit(self, record):
+        msg = self.format(record)
+        level = LevelMap.get(record.levelno)
+        ucmlogger.log(level, record.filename, record.funcName, record.lineno, msg)
 
 
 if __name__ == "__main__":
