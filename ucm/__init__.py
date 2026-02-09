@@ -21,11 +21,10 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 #
-import vllm
-
+# from ucm.integration.vllm.patch.logger_patch import patch_logger
 from ucm.logger import init_logger
 
-vllm.logger.init_logger = init_logger
+# vllm.logger.init_logger = init_logger
 _ucm_logger = init_logger("UC")
 _ucm_logger.info(f"Logger initialized successfully")
 

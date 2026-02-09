@@ -15,6 +15,9 @@ description = "Persist and reuse KV Cache to speedup your LLM."
 requires-python = ">=3.10"
 dynamic = [ "version", "dependencies", "optional-dependencies"]
 
+[project.entry-points."vllm.general_plugins"]
+ucm_patcher = "ucm.integration.vllm.patch.apply_patch:apply_all_patches"
+
 [project.urls]
 Homepage="https://github.com/ModelEngine-Group/unified-cache-management"
 Documentation="https://ucm.readthedocs.io/en/latest"

@@ -119,6 +119,7 @@ def apply_all_patches() -> None:
     if _patches_applied:
         return
 
+    from ucm.integration.vllm.patch.logger_patch import patch_logger
     try:
         version = get_vllm_version()
         if version is None:
