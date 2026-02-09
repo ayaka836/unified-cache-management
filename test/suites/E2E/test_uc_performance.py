@@ -13,8 +13,10 @@ from common.uc_eval.utils.data_class import ModelConfig, PerfConfig
 
 perf_scenarios = [
     # (mean_in, mean_out, max_req, concurrent, random_seed, hit_rate)
-    (1000, 1024, 8, 8, 0, 0),
-    (4000, 500, 1, 1, 0, 0),
+    (4000, 1024, 1, 1, 0, 0),
+    (4000, 1024, 16, 16, 0, 0),
+    (4000, 1024, 32, 32, 0, 0),
+    (4000, 1024, 128, 128, 0, 0),
 ]
 scenario_ids = [f"in_{s[0]}-out_{s[1]}-con_{s[3]}" for s in perf_scenarios]
 TOTAL_COUNTER = len(perf_scenarios)

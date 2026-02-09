@@ -5,7 +5,6 @@ from dataclasses import asdict
 
 from transformers import AutoTokenizer
 
-# Third Party
 from vllm import LLM, SamplingParams
 from vllm.config import KVTransferConfig
 from vllm.engine.arg_utils import EngineArgs
@@ -34,6 +33,7 @@ def build_llm_with_uc(module_path: str, name: str, model: str):
         enforce_eager=True,
         trust_remote_code=True,
         enable_prefix_caching=False,
+        tensor_parallel_size=2,
     )
 
     llm = LLM(**asdict(llm_args))
@@ -62,7 +62,7 @@ def print_output(
 def main():
     module_path = "ucm.integration.vllm.ucm_connector"
     name = "UCMConnector"
-    model = os.getenv("MODEL_PATH", "/home/models/DeepSeek-V2-Lite")
+    model = os.getenv("MODEL_PATH", "/home/models/Qwen2.5-1.5B-Instruct")
 
     tokenizer = AutoTokenizer.from_pretrained(model, use_chat_template=True)
 

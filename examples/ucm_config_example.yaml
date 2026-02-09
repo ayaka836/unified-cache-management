@@ -11,7 +11,7 @@
 ucm_connectors:
   - ucm_connector_name: "UcmNfsStore"
     ucm_connector_config:
-      storage_backends: "/mnt/test"
+      storage_backends: "/home/share/ljc-test"
       io_direct: false
 
 # Enable UCM metrics so they can be monitored online via Grafana and Prometheus.

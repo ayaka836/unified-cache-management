@@ -3,7 +3,7 @@ reports:
   use_timestamp: true
   directory_prefix: "pytest"
   html: # pytest-html
-    enabled: false
+    enabled: true
     filename: "report.html"
     title: "UCM Pytest Test Report"
 
@@ -24,17 +24,14 @@ models:
   enable_clear_hbm: false
   max_seq_length: 18500
 
-# LLM Connection Configuration
 llm_connection:
-  model: "Qwen3-32B"
-  server_url: "http://141.111.32.70:8244"
-  tokenizer_path: "/mnt/model/Qwen3-32B"
-  llm_type: "vllm"    # vllm/sglang/mindie
-  enable_clear_hbm: true   # HBM clear enable, default true
-  stream: true    # stream output, default true
-  ignore_eos: true    # Ignore the returned terminator, default true
-  timeout: 180    # request time out, default 180
-  extra_info: "vllm_qwen3-32b_pc-gsa"  # extra info, Used to mark different service pull-up parameters
+ model: "default"
+ server_url: "http://localhost:18081"
+ tokenizer_path: "/home/models/QwQ-32B"
+ stream: true
+ ignore_eos: true
+ timeout: 180
+ extra_info: "vllm_qwen3-32b_pc-gsa" 
 
 # Environment Pre-Check Configuration
 Env_preCheck:

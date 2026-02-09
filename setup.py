@@ -101,7 +101,7 @@ class CMakeBuild(build_ext):
             install_dir = ext.cmake_file_path
 
         cmake_args = [
-            "-DCMAKE_BUILD_TYPE=Release",
+            "-DCMAKE_BUILD_TYPE=Debug",
             f"-DPYTHON_EXECUTABLE={sys.executable}",
             f"-DCMAKE_INSTALL_PREFIX={install_dir}",
         ]
@@ -127,12 +127,12 @@ class CMakeBuild(build_ext):
             ["cmake", *cmake_args, ext.cmake_file_path], cwd=build_dir
         )
         subprocess.check_call(
-            ["cmake", "--build", ".", "--config", "Release", "--", "-j8"],
+            ["cmake", "--build", ".", "--config", "Debug", "--", "-j8"],
             cwd=build_dir,
         )
 
         subprocess.check_call(
-            ["cmake", "--install", ".", "--config", "Release", "--component", "ucm"],
+            ["cmake", "--install", ".", "--config", "Debug", "--component", "ucm"],
             cwd=build_dir,
         )
 
