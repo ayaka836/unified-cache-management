@@ -49,6 +49,7 @@ ENABLE_SPARSE = os.getenv("ENABLE_SPARSE", "0").lower() in (
     "on",
 )
 
+ENABLE_UCM_PATCH = os.environ.get('ENABLE_UCM_PATCH', '').lower() in ('1', 'true')
 
 def _patch_ascend() -> bool:
     return os.getenv("PLATFORM") == "ascend"
@@ -128,6 +129,11 @@ def apply_all_patches() -> None:
         return
 
     try:
+        # Apply common patch here
+
+        if not ENABLE_UCM_PATCH:
+             return
+
         version = get_vllm_version()
         if version is None:
             raise ValueError("Could not detect vLLM version")
@@ -139,7 +145,6 @@ def apply_all_patches() -> None:
                 f"Supported versions: {', '.join(supported_versions)}. "
             )
 
-        # Apply common patch here
 
         # Apply version-specific patches
         match version:
