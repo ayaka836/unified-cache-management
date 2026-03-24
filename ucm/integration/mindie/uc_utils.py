@@ -30,6 +30,6 @@ class KVPtrComputer:
                 stride0 = np.uint64(t.stride(0) * elem)
                 self.ptr_table[layer, kv, :] = base + stride0 * ar
 
-    def ptrs_for_blocks_np(self, block_ids):
+    def ptrs_for_blocks_layer_np(self, block_ids, layer_id):
         idx = np.asarray(block_ids, dtype=np.intp)
-        return self.ptr_table[:, :, idx].transpose(2, 0, 1)
+        return self.ptr_table[layer_id, :, idx].transpose(1, 0)

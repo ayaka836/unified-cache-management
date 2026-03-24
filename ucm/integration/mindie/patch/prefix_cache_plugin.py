@@ -346,9 +346,9 @@ class PrefixCachePlugin(Plugin):
                     cur_dp_remote_blocks_hits += num_computed_blocks
             only_save_kv = cur_dp_remote_blocks_hits == 0
         for layer_id in range(self.num_put_layers):
-            self.put_task_queue.put((layer_id == 0, layer_id == (self.num_put_layers - 1), only_save_kv))
+            self.put_task_queue.put((layer_id, only_save_kv))
 
-    def put_prefix_kvcache_to_mempool(self, input_metadata, cache_ids):
+    def put_prefix_kvcache_to_mempool(self, input_metadata, cache_ids, layer_id):
         if self.mempool_type == MemPoolType.DISABLED or not input_metadata.is_prefill or \
             sum(input_metadata.batch_dp_rank_ids == self.generator_backend.mapping.attn_dp.rank) <= 0:
             return
@@ -406,7 +406,7 @@ class PrefixCachePlugin(Plugin):
             
         if not prefix_keys:
             return
-        kvcache_tensors = self.kvptr_computer.ptrs_for_blocks_np(np.asarray(req_block_ids, dtype=np.intp))
+        kvcache_tensors = self.kvptr_computer.ptrs_for_blocks_layer_np(np.asarray(req_block_ids, dtype=np.intp), layer_id)
         self.m_store.put(prefix_keys, kvcache_tensors)
 
     def _put_prefix_kvcache_thread(self):
@@ -419,13 +419,13 @@ class PrefixCachePlugin(Plugin):
             input_metadata, cache_ids = self.put_input_queue.get()
             self.put_prefix_kvcache_put_task_queue(input_metadata, cache_ids)
             while not self.put_task_queue.empty():
-                is_first, is_last, only_save_kv = self.put_task_queue.get()
-                if is_first:
+                layer_id, only_save_kv = self.put_task_queue.get()
+                if layer_id == 0:
                     self.save_event.clear()  # False
                 pipe_key = self.model_wrapper.generate_mem_pool_event_key(only_save_kv)
                 self.model_wrapper.model_runner.wait_event(pipe_key)
-                if is_last:
-                    self.put_prefix_kvcache_to_mempool(input_metadata, cache_ids)
+                self.put_prefix_kvcache_to_mempool(input_metadata, cache_ids, layer_id)
+                if layer_id == self.num_put_layers - 1:
                     self.save_event.set()  # True
 
 
