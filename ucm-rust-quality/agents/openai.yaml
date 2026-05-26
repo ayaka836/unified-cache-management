@@ -1,0 +1,4 @@
+interface:
+  display_name: "UCM Rust Quality"
+  short_description: "Review UCM Rust quality, FFI, APIs, and gates."
+  default_prompt: "Use $ucm-rust-quality to review Rust code quality for a UCM refactoring change."
