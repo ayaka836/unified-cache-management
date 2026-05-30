@@ -1,0 +1,2 @@
+1.不同node是否对称，需不需要区分client和server
+2.

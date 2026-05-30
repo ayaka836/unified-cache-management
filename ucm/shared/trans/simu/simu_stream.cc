@@ -151,6 +151,18 @@ Status SimuStream::HostToDeviceAsync(void* host, void* device[], size_t size, si
     return Status::OK();
 }
 
+Status SimuStream::DeviceToDevice(void* src, void* dst, size_t size)
+{
+    std::memcpy(dst, src, size);
+    return Status::OK();
+}
+
+Status SimuStream::DeviceToDeviceAsync(void* src, void* dst, size_t size)
+{
+    this->EnqueueTask([=] { this->DeviceToDevice(src, dst, size); });
+    return Status::OK();
+}
+
 Status SimuStream::AppendCallback(std::function<void(bool)> cb)
 {
     this->EnqueueTask([=] { cb(true); });

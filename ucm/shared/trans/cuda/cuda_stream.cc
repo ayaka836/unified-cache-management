@@ -126,6 +126,20 @@ Status Trans::CudaStream::HostToDeviceAsync(void* host, void* device[], size_t s
     return Status::OK();
 }
 
+Status CudaStream::DeviceToDevice(void* src, void* dst, size_t size)
+{
+    auto ret = cudaMemcpy(dst, src, size, cudaMemcpyDeviceToDevice);
+    if (ret != cudaSuccess) [[unlikely]] { return Status{ret, cudaGetErrorString(ret)}; }
+    return Status::OK();
+}
+
+Status CudaStream::DeviceToDeviceAsync(void* src, void* dst, size_t size)
+{
+    auto ret = cudaMemcpyAsync(dst, src, size, cudaMemcpyDeviceToDevice, stream_);
+    if (ret != cudaSuccess) [[unlikely]] { return Status{ret, cudaGetErrorString(ret)}; }
+    return Status::OK();
+}
+
 using Closure = std::function<void(bool)>;
 
 static void Trampoline(cudaStream_t stream, cudaError_t err, void* data)

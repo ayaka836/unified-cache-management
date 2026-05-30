@@ -188,6 +188,76 @@ def _cache_posix_pipeline_builder(
     pipeline.Stack("Cache", str(store_dir / "cache/libcachestore.so"), config)
 
 
+def _remotemem_pipeline_builder(
+    config: Dict[str, object], pipeline: ucmpipelinestore.PipelineStore
+):
+    store_dir = Path(__file__).resolve().parent.parent
+    pipeline.Stack(
+        "RemoteMem", str(store_dir / "remotemem/libremotememstore.so"), config
+    )
+
+
+def _remotemem_posix_pipeline_builder(
+    config: Dict[str, object], pipeline: ucmpipelinestore.PipelineStore
+):
+    store_dir = Path(__file__).resolve().parent.parent
+    posix_config = copy.deepcopy(config)
+    remotemem_config = copy.deepcopy(config)
+    if config.get("device_id", -1) >= 0:
+        posix_config |= {"tensor_size": config["shard_size"]}
+        remotemem_config |= {
+            "remote_mem_backend_fallback": True,
+            "remote_mem_backend_write_through": True,
+        }
+    pipeline.Stack("Posix", str(store_dir / "posix/libposixstore.so"), posix_config)
+    pipeline.Stack(
+        "RemoteMem",
+        str(store_dir / "remotemem/libremotememstore.so"),
+        remotemem_config,
+    )
+
+
+def _cache_remotemem_pipeline_builder(
+    config: Dict[str, object], pipeline: ucmpipelinestore.PipelineStore
+):
+    store_dir = Path(__file__).resolve().parent.parent
+    remotemem_config = copy.deepcopy(config)
+    if config.get("device_id", -1) >= 0:
+        remotemem_config |= {
+            "tensor_size": config["shard_size"],
+            "remote_mem_addr_type": "host",
+        }
+    pipeline.Stack(
+        "RemoteMem",
+        str(store_dir / "remotemem/libremotememstore.so"),
+        remotemem_config,
+    )
+    pipeline.Stack("Cache", str(store_dir / "cache/libcachestore.so"), config)
+
+
+def _cache_remotemem_posix_pipeline_builder(
+    config: Dict[str, object], pipeline: ucmpipelinestore.PipelineStore
+):
+    store_dir = Path(__file__).resolve().parent.parent
+    posix_config = copy.deepcopy(config)
+    remotemem_config = copy.deepcopy(config)
+    if config.get("device_id", -1) >= 0:
+        posix_config |= {"tensor_size": config["shard_size"]}
+        remotemem_config |= {
+            "tensor_size": config["shard_size"],
+            "remote_mem_addr_type": "host",
+            "remote_mem_backend_fallback": True,
+            "remote_mem_backend_write_through": True,
+        }
+    pipeline.Stack("Posix", str(store_dir / "posix/libposixstore.so"), posix_config)
+    pipeline.Stack(
+        "RemoteMem",
+        str(store_dir / "remotemem/libremotememstore.so"),
+        remotemem_config,
+    )
+    pipeline.Stack("Cache", str(store_dir / "cache/libcachestore.so"), config)
+
+
 def _empty_pipeline_builder(
     config: Dict[str, object], pipeline: ucmpipelinestore.PipelineStore
 ):
@@ -212,6 +282,12 @@ def _posix_pipeline_builder(
 UcmPipelineStoreBuilder.register("Cache|Ds3fs", _cache_ds3fs_pipeline_builder)
 UcmPipelineStoreBuilder.register("Cache|Empty", _cache_empty_pipeline_builder)
 UcmPipelineStoreBuilder.register("Cache|Posix", _cache_posix_pipeline_builder)
+UcmPipelineStoreBuilder.register("Cache|RemoteMem", _cache_remotemem_pipeline_builder)
+UcmPipelineStoreBuilder.register(
+    "Cache|RemoteMem|Posix", _cache_remotemem_posix_pipeline_builder
+)
 UcmPipelineStoreBuilder.register("Empty", _empty_pipeline_builder)
 UcmPipelineStoreBuilder.register("Fake", _fake_pipeline_builder)
 UcmPipelineStoreBuilder.register("Posix", _posix_pipeline_builder)
+UcmPipelineStoreBuilder.register("RemoteMem", _remotemem_pipeline_builder)
+UcmPipelineStoreBuilder.register("RemoteMem|Posix", _remotemem_posix_pipeline_builder)

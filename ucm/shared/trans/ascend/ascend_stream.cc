@@ -147,6 +147,20 @@ Status AscendStream::HostToDeviceAsync(void* host, void* device[], size_t size, 
     return Status::OK();
 }
 
+Status AscendStream::DeviceToDevice(void* src, void* dst, size_t size)
+{
+    auto ret = aclrtMemcpy(dst, size, src, size, ACL_MEMCPY_DEVICE_TO_DEVICE);
+    if (ret == ACL_SUCCESS) { return Status::OK(); }
+    return Status{ret, std::to_string(ret)};
+}
+
+Status AscendStream::DeviceToDeviceAsync(void* src, void* dst, size_t size)
+{
+    auto ret = aclrtMemcpyAsync(dst, size, src, size, ACL_MEMCPY_DEVICE_TO_DEVICE, stream_);
+    if (ret == ACL_SUCCESS) { return Status::OK(); }
+    return Status{ret, std::to_string(ret)};
+}
+
 using Closure = std::function<void(bool)>;
 
 static void Trampoline(void* data)
