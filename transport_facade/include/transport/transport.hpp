@@ -2,15 +2,19 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <string>
-#include <unordered_map>
-#include <variant>
 #include <vector>
 
 namespace transport {
 
 using EndpointID = uint64_t;
+using MemoryHandle = uint64_t;
+using TaskID = uint64_t;
 constexpr EndpointID kLocalEndpointID = 0;
+constexpr EndpointID kInvalidEndpointID = 0;
+constexpr MemoryHandle kInvalidMemoryHandle = 0;
+constexpr TaskID kInvalidTaskID = 0;
 
 enum class Status {
     Ok,
@@ -28,11 +32,10 @@ enum class Operation {
     Get,
 };
 
-enum class TransferRoute {
-    LocalD2D,
-    RemoteD2D,
-    RemoteH2H,
-    RemoteD2H,
+enum class TaskState {
+    Pending,
+    Done,
+    Failed,
 };
 
 // 后端原生流。
@@ -48,33 +51,16 @@ struct MemoryRegion {
     int device_id = -1;
 };
 
-// FFTS 内存属性。
-struct FftsMemoryAttrs {};
-
-// HCCS 内存属性。
-struct HccsMemoryAttrs {
-    std::string ipc_name;
-    uint32_t owner_pid = 0;
-    int device_id = -1;
+// 内存属性基类。
+struct MemoryAttrs {
+    virtual ~MemoryAttrs() = default;
 };
-
-// HCOMM 内存属性。
-struct HcommMemoryAttrs {
-    uint64_t remote_addr = 0;
-    uint64_t remote_size = 0;
-    MemoryType memory_type = MemoryType::Host;
-    int device_id = -1;
-    uint64_t remote_handle = 0;
-};
-
-using MemoryAttrs =
-    std::variant<FftsMemoryAttrs, HccsMemoryAttrs, HcommMemoryAttrs>;
 
 // 可交换的内存描述。
 struct MemoryExport {
+    MemoryHandle handle = kInvalidMemoryHandle;
     MemoryRegion region;
-    std::string transport;
-    MemoryAttrs attrs;
+    std::shared_ptr<const MemoryAttrs> attrs;
 };
 
 // 本地已注册内存。
@@ -83,59 +69,24 @@ struct LocalMemory {
     void* native = nullptr;
 };
 
-// FFTS 端点属性。
-struct FftsEndpointAttrs {
-    int32_t device_id = 0;
+// 端点属性基类。
+struct EndpointAttrs {
+    virtual ~EndpointAttrs() = default;
 };
 
-// HCCS 端点属性。
-struct HccsEndpointAttrs {
-    int device_id = -1;
-    uint32_t pid = 0;
-    int rank = -1;
-    std::vector<std::string> notify_names;
-};
-
-// HCOMM 端点属性。
-struct HcommEndpointAttrs {
-    int protocol = -1;
-    int engine = -1;
-    int addr_type = -1;
-    std::string addr;
-    int loc_type = -1;
-    int device_id = -1;
-    uint32_t channel_count = 1;
-    uint32_t notify_count = 0;
-    bool exchange_all_mems = false;
-};
-
-using EndpointAttrs =
-    std::variant<FftsEndpointAttrs, HccsEndpointAttrs, HcommEndpointAttrs>;
-
-// 单协议端点描述。
-struct ProtocolEndpointExport {
-    std::string transport;
-    EndpointAttrs attrs;
-};
-
-// 可交换的完整端点描述。
+// 可交换的端点描述。
 struct EndpointExport {
+    std::shared_ptr<const EndpointAttrs> attrs;
     std::vector<MemoryExport> memories;
-    std::vector<ProtocolEndpointExport> endpoints;
-};
-
-// 已导入的远端端点。
-struct RemoteEndpoint {
-    EndpointID id = kLocalEndpointID;
-    EndpointExport exported;
 };
 
 // 单边传输请求。
 struct Transfer {
     Operation op = Operation::Put;
-    TransferRoute route;
+    MemoryHandle local_handle = kInvalidMemoryHandle;
     void* local = nullptr;
     EndpointID target_id = kLocalEndpointID;
+    MemoryHandle remote_handle = kInvalidMemoryHandle;
     uint64_t target_address = 0;
     uint64_t length = 0;
     Stream stream;
@@ -144,104 +95,52 @@ struct Transfer {
 
 // 双边消息请求。
 struct Message {
-    TransferRoute route;
+    MemoryHandle local_handle = kInvalidMemoryHandle;
     void* local = nullptr;
     EndpointID target_id = kLocalEndpointID;
-    uint64_t target_address = 0;
     uint64_t length = 0;
-    uint64_t tag = 0;
     Stream stream;
-    void* context = nullptr;
 };
 
-// 已解析的后端请求。
-struct PreparedRequest {
-    Operation op = Operation::Put;
-    EndpointID target_id = kLocalEndpointID;
-    LocalMemory* local = nullptr;
-    MemoryExport remote;
-    uint64_t local_offset = 0;
-    uint64_t remote_offset = 0;
-    uint64_t length = 0;
-    uint64_t tag = 0;
-    Stream stream;
-    void* context = nullptr;
+// 异步任务结果。
+struct TaskResult {
+    TaskState state = TaskState::Pending;
+    Status status = Status::Ok;
+    uint64_t transferred = 0;
 };
 
-// 具体传输后端接口。
+// 传输后端最小接口。
 class Transport {
    public:
     virtual ~Transport() = default;
 
-    // 协议名。
-    virtual const char* protocol() const = 0;
     // 初始化后端。
     virtual Status init(void* options) = 0;
-    // 导出本端属性。
-    virtual Status exportEndpoint(ProtocolEndpointExport& out) const;
-    // 连接远端。
-    virtual Status connect(const RemoteEndpoint& remote);
     // 关闭后端。
     virtual Status shutdown() = 0;
-
-    // 是否支持该内存。
-    virtual bool supportsMemory(const MemoryRegion& memory) const;
     // 注册本地内存。
     virtual Status registerMemory(const MemoryRegion& memory,
-                                  MemoryExport& out) = 0;
+                                  MemoryHandle& out);
     // 注销本地内存。
-    virtual Status unregisterMemory(void* addr) = 0;
+    virtual Status unregisterMemory(MemoryHandle handle);
+    // 导出本端描述。
+    virtual EndpointExport exportEndpoint() const;
+    // 导入远端描述。
+    virtual EndpointID importEndpoint(const EndpointExport& remote);
+    // 关闭远端端点。
+    virtual void closeEndpoint(EndpointID id);
     // 提交单边传输。
-    virtual Status submitTransfer(const Transfer& request,
-                                  const EndpointExport& local,
-                                  const EndpointExport& remote);
+    virtual Status submitTransfer(const Transfer& request, TaskID& out);
     // 提交发送。
-    virtual Status submitSend(const Message& request,
-                              const EndpointExport& local,
-                              const EndpointExport& remote);
+    virtual Status send(const Message& request, TaskID& out);
     // 提交接收。
-    virtual Status submitReceive(const Message& request,
-                                 const EndpointExport& local,
-                                 const EndpointExport& remote);
-
-    // 后端提交入口。
-    virtual Status submit(const PreparedRequest& request) = 0;
-    // 后端发送入口。
-    virtual Status send(const PreparedRequest& request);
-    // 后端接收入口。
-    virtual Status receive(const PreparedRequest& request);
-
-   protected:
-    // 查找本地内存。
-    LocalMemory* findLocalMemory(void* addr);
-    // 按地址查找远端内存。
-    static const MemoryExport* findMemory(const EndpointExport& endpoint,
-                                          uint64_t address,
-                                          const std::string& transport);
-    // 查找协议首个远端内存。
-    static const MemoryExport* findTransportMemory(
-        const EndpointExport& endpoint,
-        const std::string& transport);
-
-    // 查找协议端点属性。
-    template <typename Attrs>
-    static const Attrs* findEndpointAttrs(const EndpointExport& endpoint,
-                                          const std::string& transport) {
-        for (const auto& entry : endpoint.endpoints) {
-            if (entry.transport == transport) {
-                return std::get_if<Attrs>(&entry.attrs);
-            }
-        }
-        return nullptr;
-    }
-
-    // 读取内存属性。
-    template <typename Attrs>
-    static const Attrs* getMemoryAttrs(const MemoryExport& memory) {
-        return std::get_if<Attrs>(&memory.attrs);
-    }
-
-    std::unordered_map<void*, LocalMemory> local_memory_;
+    virtual Status receive(const Message& request, TaskID& out);
+    // 查询任务。
+    virtual Status query(TaskID id, TaskResult& out);
+    // 等待任务。
+    virtual Status wait(TaskID id, TaskResult& out, uint64_t timeout_us);
+    // 释放任务。
+    virtual void release(TaskID id);
 };
 
 }  // namespace transport

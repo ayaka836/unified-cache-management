@@ -205,95 +205,95 @@ FftsTransport::FftsTransport(FftsTransport&&) noexcept = default;
 
 FftsTransport& FftsTransport::operator=(FftsTransport&&) noexcept = default;
 
-bool FftsTransport::supportsMemory(const MemoryRegion& memory) const {
-    return memory.type == MemoryType::Device;
-}
-
 Status FftsTransport::init(void* options) {
     auto* ffts_options = static_cast<FftsOptions*>(options);
     device_id_ = ffts_options == nullptr ? 0 : ffts_options->device_id;
     return impl_->setup(device_id_);
 }
 
-Status FftsTransport::exportEndpoint(ProtocolEndpointExport& out) const {
-    out.transport = protocol();
-    out.attrs = FftsEndpointAttrs{device_id_};
-    return Status::Ok;
+EndpointExport FftsTransport::exportEndpoint() const {
+    EndpointExport endpoint;
+    auto attrs = std::make_shared<FftsEndpointAttrs>();
+    attrs->device_id = device_id_;
+    endpoint.attrs = attrs;
+    return endpoint;
 }
 
 Status FftsTransport::shutdown() { return impl_->synchronize(); }
 
-Status FftsTransport::registerMemory(const MemoryRegion& memory,
-                                     MemoryExport& out) {
-    out.region = memory;
-    out.transport = protocol();
-    out.attrs = FftsMemoryAttrs{};
-
-    LocalMemory handle;
-    handle.exported = out;
-    local_memory_[memory.addr] = handle;
-    return Status::Ok;
-}
-
-Status FftsTransport::unregisterMemory(void* addr) {
-    local_memory_.erase(addr);
-    return Status::Ok;
-}
-
-Status FftsTransport::submitTransfer(const Transfer& request,
-                                     const EndpointExport& local,
-                                     const EndpointExport& remote) {
-    auto* local_handle = findLocalMemory(request.local);
-    auto* target_handle =
-        findLocalMemory(reinterpret_cast<void*>(request.target_address));
-    if (local_handle == nullptr || target_handle == nullptr) {
+Status FftsTransport::submitTransfer(const Transfer& request, TaskID& out) {
+    out = kInvalidTaskID;
+    if (request.length != 0 &&
+        (request.local == nullptr || request.target_address == 0)) {
         return Status::NotSupported;
     }
 
-    const auto source_addr = reinterpret_cast<uint64_t>(request.local);
-    const auto source_base =
-        reinterpret_cast<uint64_t>(local_handle->exported.region.addr);
-    const auto target_addr = request.target_address;
-    const auto target_base =
-        reinterpret_cast<uint64_t>(target_handle->exported.region.addr);
-
-    PreparedRequest backend_request;
-    backend_request.op = request.op;
-    backend_request.target_id = request.target_id;
-    backend_request.local = local_handle;
-    backend_request.remote = target_handle->exported;
-    backend_request.remote.transport = protocol();
-    backend_request.local_offset = source_addr - source_base;
-    backend_request.remote_offset = target_addr - target_base;
-    backend_request.length = request.length;
-    backend_request.stream = request.stream;
-    backend_request.context = request.context;
-    (void)local;
-    return submit(backend_request);
-}
-
-Status FftsTransport::submit(const PreparedRequest& request) {
-    if (request.local == nullptr) {
-        return Status::NotSupported;
-    }
-
-    auto* local_base = static_cast<std::byte*>(request.local->exported.region.addr);
-    auto* local = local_base + request.local_offset;
-    auto* remote_base = static_cast<std::byte*>(request.remote.region.addr);
-    auto* remote = remote_base + request.remote_offset;
+    auto* local_addr = static_cast<std::byte*>(request.local);
+    auto* remote_addr = reinterpret_cast<std::byte*>(request.target_address);
 
     switch (request.op) {
         case Operation::Put: {
-            FftsCopyDesc copy{remote, local, request.length};
-            return impl_->submit(&copy, 1);
+            FftsCopyDesc copy{remote_addr, local_addr, request.length};
+            const auto status = impl_->submit(&copy, 1);
+            if (status != Status::Ok) {
+                return status;
+            }
+            out = next_task_id_++;
+            tasks_[out] = TaskRecord{
+                TaskResult{TaskState::Pending, Status::Ok, request.length},
+                nullptr,
+            };
+            return Status::Ok;
         }
         case Operation::Get: {
-            FftsCopyDesc copy{local, remote, request.length};
-            return impl_->submit(&copy, 1);
+            FftsCopyDesc copy{local_addr, remote_addr, request.length};
+            const auto status = impl_->submit(&copy, 1);
+            if (status != Status::Ok) {
+                return status;
+            }
+            out = next_task_id_++;
+            tasks_[out] = TaskRecord{
+                TaskResult{TaskState::Pending, Status::Ok, request.length},
+                nullptr,
+            };
+            return Status::Ok;
         }
     }
 
     return Status::Failed;
+}
+
+Status FftsTransport::query(TaskID id, TaskResult& out) {
+    auto iter = tasks_.find(id);
+    if (iter == tasks_.end()) {
+        out = {};
+        return Status::NotSupported;
+    }
+
+    // Real implementation should query FFTS stream/event completion here.
+    out = iter->second.result;
+    return Status::Ok;
+}
+
+Status FftsTransport::wait(TaskID id, TaskResult& out, uint64_t timeout_us) {
+    auto iter = tasks_.find(id);
+    if (iter == tasks_.end()) {
+        out = {};
+        return Status::NotSupported;
+    }
+
+    // Real implementation should wait on FFTS stream/event up to timeout_us.
+    (void)timeout_us;
+    const auto status = impl_->synchronize();
+    iter->second.result.state =
+        status == Status::Ok ? TaskState::Done : TaskState::Failed;
+    iter->second.result.status = status;
+    out = iter->second.result;
+    return status;
+}
+
+void FftsTransport::release(TaskID id) {
+    tasks_.erase(id);
 }
 
 }  // namespace transport
