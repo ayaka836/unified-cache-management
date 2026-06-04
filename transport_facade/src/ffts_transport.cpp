@@ -211,8 +211,14 @@ bool FftsTransport::supportsMemory(const MemoryRegion& memory) const {
 
 Status FftsTransport::init(void* options) {
     auto* ffts_options = static_cast<FftsOptions*>(options);
-    const auto device_id = ffts_options == nullptr ? 0 : ffts_options->device_id;
-    return impl_->setup(device_id);
+    device_id_ = ffts_options == nullptr ? 0 : ffts_options->device_id;
+    return impl_->setup(device_id_);
+}
+
+Status FftsTransport::exportEndpoint(ProtocolEndpointExport& out) const {
+    out.transport = protocol();
+    out.attrs = FftsEndpointAttrs{device_id_};
+    return Status::Ok;
 }
 
 Status FftsTransport::shutdown() { return impl_->synchronize(); }
@@ -221,6 +227,7 @@ Status FftsTransport::registerMemory(const MemoryRegion& memory,
                                      MemoryExport& out) {
     out.region = memory;
     out.transport = protocol();
+    out.attrs = FftsMemoryAttrs{};
 
     LocalMemory handle;
     handle.exported = out;
@@ -252,6 +259,7 @@ Status FftsTransport::submitTransfer(const Transfer& request,
 
     PreparedRequest backend_request;
     backend_request.op = request.op;
+    backend_request.target_id = request.target_id;
     backend_request.local = local_handle;
     backend_request.remote = target_handle->exported;
     backend_request.remote.transport = protocol();

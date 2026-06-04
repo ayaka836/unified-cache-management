@@ -23,7 +23,7 @@ class HccsTransport final : public Transport {
     bool supportsMemory(const MemoryRegion& memory) const override;
 
     Status init(void* options) override;
-    Status exportControlPlane(std::vector<std::byte>& out) const override;
+    Status exportEndpoint(ProtocolEndpointExport& out) const override;
     Status connect(const RemoteEndpoint& remote) override;
     Status shutdown() override;
     Status registerMemory(const MemoryRegion& memory,
@@ -37,11 +37,17 @@ class HccsTransport final : public Transport {
     Status receive(const PreparedRequest& request) override;
 
    private:
-    Status importRemoteMemory(const MemoryExport& desc, MemoryExport& out);
+    struct PeerState {
+        HccsEndpointAttrs endpoint;
+    };
+
+    Status importRemoteMemory(EndpointID target_id, const MemoryExport& desc,
+                              MemoryExport& out);
 
     HccsOptions options_;
-    std::unordered_map<EndpointID, std::string> remote_control_cache_;
-    std::unordered_map<std::string, MemoryExport> remote_import_cache_;
+    std::unordered_map<EndpointID, PeerState> peers_;
+    std::unordered_map<EndpointID, std::unordered_map<std::string, MemoryExport>>
+        remote_import_cache_;
 };
 
 }  // namespace transport

@@ -26,6 +26,7 @@ class FftsTransport final : public Transport {
     bool supportsMemory(const MemoryRegion& memory) const override;
 
     Status init(void* options) override;
+    Status exportEndpoint(ProtocolEndpointExport& out) const override;
     Status shutdown() override;
     Status registerMemory(const MemoryRegion& memory,
                           MemoryExport& out) override;
@@ -38,6 +39,7 @@ class FftsTransport final : public Transport {
    private:
     class Impl;
     std::unique_ptr<Impl> impl_;
+    int32_t device_id_ = 0;
 };
 
 }  // namespace transport

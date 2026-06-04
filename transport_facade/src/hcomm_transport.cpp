@@ -1,22 +1,8 @@
 #include "transport/hcomm_transport.hpp"
 
-#include <sstream>
 #include <string>
 
 namespace transport {
-
-namespace {
-
-std::vector<std::byte> toBytes(const std::string& value) {
-    const auto* begin = reinterpret_cast<const std::byte*>(value.data());
-    return {begin, begin + value.size()};
-}
-
-std::string fromBytes(const std::vector<std::byte>& value) {
-    return {reinterpret_cast<const char*>(value.data()), value.size()};
-}
-
-}  // namespace
 
 Status HcommTransport::init(void* options) {
     auto* hcomm_options = static_cast<HcommOptions*>(options);
@@ -32,60 +18,55 @@ Status HcommTransport::init(void* options) {
     return Status::Ok;
 }
 
-Status HcommTransport::exportControlPlane(std::vector<std::byte>& out) const {
-    std::ostringstream stream;
-    stream << "protocol=" << options_.local.protocol << '\n'
-           << "engine=" << options_.local.engine << '\n'
-           << "addr_type=" << options_.local.addr_type << '\n'
-           << "addr=" << options_.local.addr << '\n'
-           << "loc_type=" << options_.local.loc_type << '\n'
-           << "device_id=" << options_.local.device_id << '\n'
-           << "channel_count=" << options_.channel_count << '\n'
-           << "notify_count=" << options_.notify_count << '\n'
-           << "exchange_all_mems=" << (options_.exchange_all_mems ? 1 : 0)
-           << '\n';
+Status HcommTransport::exportEndpoint(ProtocolEndpointExport& out) const {
+    HcommEndpointAttrs attrs = options_.local;
+    attrs.channel_count = options_.channel_count;
+    attrs.notify_count = options_.notify_count;
+    attrs.exchange_all_mems = options_.exchange_all_mems;
 
-    out = toBytes(stream.str());
+    out.transport = protocol();
+    out.attrs = attrs;
     return Status::Ok;
 }
 
 Status HcommTransport::connect(const RemoteEndpoint& remote) {
-    const auto* control_blob = findControlBlob(remote.exported, protocol());
-    if (control_blob == nullptr) {
+    const auto* attrs =
+        findEndpointAttrs<HcommEndpointAttrs>(remote.exported, protocol());
+    if (attrs == nullptr) {
         return Status::NotSupported;
     }
 
-    remote_control_cache_[remote.id] = fromBytes(*control_blob);
+    auto& peer = peers_[remote.id];
+    peer.endpoint = *attrs;
+    peer.channels.resize(options_.channel_count);
 
-    channels_.resize(options_.channel_count);
-    // Build peer EndpointDesc from the remote control blob.
+    // Build peer EndpointDesc from attrs.
     // HcommChannelDesc descs[options_.channel_count]
     // fill descs with peer EndpointDesc, notify_count, exchange_all_mems
     // HcommChannelCreate(endpoint_, options_.local.engine, descs,
-    //                    options_.channel_count, channels_.data())
+    //                    options_.channel_count, peer.channels.data())
     return Status::Ok;
 }
 
 Status HcommTransport::shutdown() {
-    for (const auto& entry : remote_import_cache_) {
-        // HcommMemUnimport(endpoint_, entry.second.import_blob.data(),
-        //                  entry.second.import_blob.size())
-        (void)entry;
+    for (const auto& endpoint_entry : remote_import_cache_) {
+        for (const auto& entry : endpoint_entry.second) {
+            // HcommMemUnimport(endpoint_, entry.second.attrs)
+            (void)entry;
+        }
     }
     remote_import_cache_.clear();
-    remote_control_cache_.clear();
-    // HcommChannelDestroy(channels_.data(), channels_.size())
+    peers_.clear();
+    // HcommChannelDestroy(peer.channels.data(), peer.channels.size())
     // HcommThreadFree(threads_.data(), threads_.size())
     // HcommEndpointDestroy(endpoint_)
-    endpoint_ = nullptr; channels_.clear(); threads_.clear();
+    endpoint_ = nullptr; threads_.clear();
     return Status::Ok;
 }
 
 Status HcommTransport::registerMemory(const MemoryRegion& memory,
                                       MemoryExport& out) {
     void* mem_handle = nullptr;
-    void* desc = nullptr;
-    uint32_t desc_len = 0;
 
     // CommMem mem {
     //     .type = memory.type == Device ? COMM_MEM_TYPE_DEVICE
@@ -98,10 +79,13 @@ Status HcommTransport::registerMemory(const MemoryRegion& memory,
 
     out.region = memory;
     out.transport = protocol();
-    if (desc != nullptr && desc_len != 0) {
-        auto* begin = static_cast<std::byte*>(desc);
-        out.import_blob.assign(begin, begin + desc_len);
-    }
+    out.attrs = HcommMemoryAttrs{
+        reinterpret_cast<uint64_t>(memory.addr),
+        memory.length,
+        memory.type,
+        memory.device_id,
+        reinterpret_cast<uint64_t>(mem_handle),
+    };
 
     LocalMemory handle;
     handle.exported = out;
@@ -122,11 +106,18 @@ Status HcommTransport::unregisterMemory(void* addr) {
     return Status::Ok;
 }
 
-Status HcommTransport::importRemoteMemory(const MemoryExport& desc,
+Status HcommTransport::importRemoteMemory(EndpointID target_id,
+                                          const MemoryExport& desc,
                                           MemoryExport& out) {
     const auto desc_addr = reinterpret_cast<uint64_t>(desc.region.addr);
-    auto iter = remote_import_cache_.find(desc_addr);
-    if (iter != remote_import_cache_.end()) {
+    const auto* attrs = getMemoryAttrs<HcommMemoryAttrs>(desc);
+    if (attrs == nullptr) {
+        return Status::NotSupported;
+    }
+
+    auto& endpoint_cache = remote_import_cache_[target_id];
+    auto iter = endpoint_cache.find(desc_addr);
+    if (iter != endpoint_cache.end()) {
         out = iter->second;
         return Status::Ok;
     }
@@ -134,8 +125,7 @@ Status HcommTransport::importRemoteMemory(const MemoryExport& desc,
     MemoryExport imported_memory = desc;
 
     // CommMem remote_mem {};
-    // HcommMemImport(endpoint_, desc.import_blob.data(),
-    //                desc.import_blob.size(), &remote_mem)
+    // HcommMemImport(endpoint_, attrs, &remote_mem)
     //
     // HCOMM import returns only a CommMem view. There is no additional remote
     // native handle. For real runtime integration:
@@ -144,9 +134,18 @@ Status HcommTransport::importRemoteMemory(const MemoryExport& desc,
     // imported_memory.region.type = remote_mem.type == COMM_MEM_TYPE_DEVICE
     //                            ? MemoryType::Device
     //                            : MemoryType::Host;
+    if (attrs->remote_addr != 0) {
+        imported_memory.region.addr =
+            reinterpret_cast<void*>(attrs->remote_addr);
+    }
+    if (attrs->remote_size != 0) {
+        imported_memory.region.length = attrs->remote_size;
+    }
+    imported_memory.region.type = attrs->memory_type;
+    imported_memory.region.device_id = attrs->device_id;
 
     out = imported_memory;
-    remote_import_cache_[desc_addr] = out;
+    endpoint_cache[desc_addr] = out;
     return Status::Ok;
 }
 
@@ -166,13 +165,15 @@ Status HcommTransport::submitTransfer(const Transfer& request,
     }
 
     MemoryExport imported;
-    const auto status = importRemoteMemory(*remote_memory, imported);
+    const auto status =
+        importRemoteMemory(request.target_id, *remote_memory, imported);
     if (status != Status::Ok) {
         return status;
     }
 
     PreparedRequest legacy;
     legacy.op = request.op;
+    legacy.target_id = request.target_id;
     legacy.local = local_handle;
     legacy.remote = imported;
     legacy.local_offset =
@@ -217,7 +218,11 @@ Status HcommTransport::submit(const PreparedRequest& request) {
     auto* remote =
         reinterpret_cast<std::byte*>(remote_base + request.remote_offset);
     auto thread = threads_.empty() ? 0 : threads_.front();
-    auto channel = channels_.empty() ? 0 : channels_.front();
+    auto peer_iter = peers_.find(request.target_id);
+    auto channel = peer_iter == peers_.end() ||
+                           peer_iter->second.channels.empty()
+                       ? 0
+                       : peer_iter->second.channels.front();
 
     switch (request.op) {
         case Operation::Put:
@@ -239,7 +244,7 @@ Status HcommTransport::submit(const PreparedRequest& request) {
 
 Status HcommTransport::send(const PreparedRequest& request) {
     MemoryExport remote;
-    auto status = importRemoteMemory(request.remote, remote);
+    auto status = importRemoteMemory(request.target_id, request.remote, remote);
     if (status != Status::Ok) {
         return status;
     }
@@ -270,7 +275,11 @@ Status HcommTransport::send(const PreparedRequest& request) {
     auto* remote_addr =
         reinterpret_cast<std::byte*>(remote_base + request.remote_offset);
     auto thread = threads_.empty() ? 0 : threads_.front();
-    auto channel = channels_.empty() ? 0 : channels_.front();
+    auto peer_iter = peers_.find(request.target_id);
+    auto channel = peer_iter == peers_.end() ||
+                           peer_iter->second.channels.empty()
+                       ? 0
+                       : peer_iter->second.channels.front();
 
     // Use request.tag/context as the caller-defined two-sided match
     // context. The HCOMM backend can map it to notify/wait metadata.
@@ -286,7 +295,7 @@ Status HcommTransport::send(const PreparedRequest& request) {
 
 Status HcommTransport::receive(const PreparedRequest& request) {
     MemoryExport remote;
-    auto status = importRemoteMemory(request.remote, remote);
+    auto status = importRemoteMemory(request.target_id, request.remote, remote);
     if (status != Status::Ok) {
         return status;
     }
@@ -317,7 +326,11 @@ Status HcommTransport::receive(const PreparedRequest& request) {
     auto* remote_addr =
         reinterpret_cast<std::byte*>(remote_base + request.remote_offset);
     auto thread = threads_.empty() ? 0 : threads_.front();
-    auto channel = channels_.empty() ? 0 : channels_.front();
+    auto peer_iter = peers_.find(request.target_id);
+    auto channel = peer_iter == peers_.end() ||
+                           peer_iter->second.channels.empty()
+                       ? 0
+                       : peer_iter->second.channels.front();
 
     // Use request.tag/context as the caller-defined two-sided match
     // context. The HCOMM backend can map it to notify/wait metadata.

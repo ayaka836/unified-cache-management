@@ -9,14 +9,7 @@
 
 namespace transport {
 
-struct HcommEndpoint {
-    int protocol = -1;   // CommProtocol
-    int engine = -1;     // CommEngine
-    int addr_type = -1;  // CommAddrType
-    std::string addr;
-    int loc_type = -1;   // EndpointLocType
-    int device_id = -1;
-};
+using HcommEndpoint = HcommEndpointAttrs;
 
 struct HcommOptions {
     HcommEndpoint local;
@@ -34,7 +27,7 @@ class HcommTransport final : public Transport {
     const char* protocol() const override { return "hcomm"; }
 
     Status init(void* options) override;
-    Status exportControlPlane(std::vector<std::byte>& out) const override;
+    Status exportEndpoint(ProtocolEndpointExport& out) const override;
     Status connect(const RemoteEndpoint& remote) override;
     Status shutdown() override;
     Status registerMemory(const MemoryRegion& memory,
@@ -48,14 +41,20 @@ class HcommTransport final : public Transport {
     Status receive(const PreparedRequest& request) override;
 
    private:
-    Status importRemoteMemory(const MemoryExport& desc, MemoryExport& out);
+    struct PeerState {
+        HcommEndpointAttrs endpoint;
+        std::vector<uint64_t> channels;
+    };
+
+    Status importRemoteMemory(EndpointID target_id, const MemoryExport& desc,
+                              MemoryExport& out);
 
     HcommOptions options_;
     void* endpoint_ = nullptr;
-    std::vector<uint64_t> channels_;
     std::vector<uint64_t> threads_;
-    std::unordered_map<EndpointID, std::string> remote_control_cache_;
-    std::unordered_map<uint64_t, MemoryExport> remote_import_cache_;
+    std::unordered_map<EndpointID, PeerState> peers_;
+    std::unordered_map<EndpointID, std::unordered_map<uint64_t, MemoryExport>>
+        remote_import_cache_;
 };
 
 }  // namespace transport

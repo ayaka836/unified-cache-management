@@ -59,9 +59,9 @@ void TransportManager::unregisterMemory(void* addr) {
 EndpointExport TransportManager::exportEndpoint() const {
     auto endpoint = local_export_;
     for (const auto& transport : transports_) {
-        std::vector<std::byte> blob;
-        if (transport->exportControlPlane(blob) == Status::Ok) {
-            endpoint.control_blobs[transport->protocol()] = std::move(blob);
+        ProtocolEndpointExport protocol_endpoint;
+        if (transport->exportEndpoint(protocol_endpoint) == Status::Ok) {
+            endpoint.endpoints.push_back(std::move(protocol_endpoint));
         }
     }
     return endpoint;

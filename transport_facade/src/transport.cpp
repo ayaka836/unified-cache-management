@@ -2,7 +2,7 @@
 
 namespace transport {
 
-Status Transport::exportControlPlane(std::vector<std::byte>& out) const {
+Status Transport::exportEndpoint(ProtocolEndpointExport& out) const {
     (void)out;
     return Status::NotSupported;
 }
@@ -34,6 +34,7 @@ Status Transport::submitTransfer(const Transfer& request,
 
     PreparedRequest legacy;
     legacy.op = request.op;
+    legacy.target_id = request.target_id;
     legacy.local = local_handle;
     legacy.remote = *remote_memory;
     legacy.local_offset =
@@ -64,6 +65,7 @@ Status Transport::submitSend(const Message& request,
     }
 
     PreparedRequest backend_request;
+    backend_request.target_id = request.target_id;
     backend_request.local = local_handle;
     backend_request.remote = *remote_memory;
     backend_request.local_offset =
@@ -91,6 +93,7 @@ Status Transport::submitReceive(const Message& request,
     }
 
     PreparedRequest backend_request;
+    backend_request.target_id = request.target_id;
     backend_request.local = local_handle;
     backend_request.remote = *remote_memory;
     backend_request.local_offset =
@@ -150,13 +153,6 @@ const MemoryExport* Transport::findTransportMemory(
         }
     }
     return nullptr;
-}
-
-const std::vector<std::byte>* Transport::findControlBlob(
-    const EndpointExport& endpoint,
-    const std::string& transport) {
-    auto iter = endpoint.control_blobs.find(transport);
-    return iter == endpoint.control_blobs.end() ? nullptr : &iter->second;
 }
 
 }  // namespace transport
