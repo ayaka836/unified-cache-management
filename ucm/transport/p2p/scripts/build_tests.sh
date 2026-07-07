@@ -15,6 +15,7 @@ EXTRA_LIBS="${EXTRA_LIBS:--lrt}"
 
 mkdir -p "${BUILD_DIR}"
 rm -f "${BUILD_DIR}/hixl_e2e" \
+      "${BUILD_DIR}/hixl_multi_conn_bench" \
       "${BUILD_DIR}/hixl_multi_instance_verify"
 
 if [[ -z "${UCM_P2P_ROOT:-}" ]]; then
@@ -163,6 +164,7 @@ COMMON_FLAGS=(
 
 TESTS=(
   hixl_e2e
+  hixl_multi_conn_bench
   hixl_multi_instance_verify
 )
 
