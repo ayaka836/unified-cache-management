@@ -14,7 +14,8 @@ LOGGER_LIBS="${LOGGER_LIBS:--lfmt -lspdlog -lz}"
 EXTRA_LIBS="${EXTRA_LIBS:--lrt}"
 
 mkdir -p "${BUILD_DIR}"
-rm -f "${BUILD_DIR}/hixl_e2e"
+rm -f "${BUILD_DIR}/hixl_e2e" \
+      "${BUILD_DIR}/hixl_multi_instance_verify"
 
 if [[ -z "${UCM_P2P_ROOT:-}" ]]; then
   UCM_P2P_ROOT="$("${PYTHON}" - <<'PY'
@@ -162,6 +163,7 @@ COMMON_FLAGS=(
 
 TESTS=(
   hixl_e2e
+  hixl_multi_instance_verify
 )
 
 for test_name in "${TESTS[@]}"; do
