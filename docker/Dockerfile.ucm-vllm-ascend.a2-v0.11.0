@@ -20,7 +20,7 @@ RUN pip config set global.index-url ${PIP_INDEX_URL}
 # Build or link package
 RUN if [ "${INSTALL_MODE}" != "package" ]; then \
         pip install --no-cache-dir build cmake && \
-        export WORKSPACE=/workspace SKIP_TAR=1 && \
+        export WORKSPACE=/workspace SKIP_TAR=1 BUILD_UCM_ASU=false && \
         bash /workspace/unified-cache-management/scripts/build_ascend.sh; \
     else \
         ln -s /workspace/unified-cache-management /workspace/package; \
