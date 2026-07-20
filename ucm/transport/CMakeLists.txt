@@ -1,4 +1,2 @@
-if(BUILD_UCM_ASU)
-    add_subdirectory(p2p)
-endif()
+add_subdirectory(p2p)
 add_subdirectory(kv)
