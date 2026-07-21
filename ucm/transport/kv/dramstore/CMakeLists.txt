@@ -9,6 +9,7 @@ add_library(drampool_core STATIC
     ${DRAMPOOL_SOURCE_DIR}/drampool_daemon.cpp
     ${DRAMPOOL_SOURCE_DIR}/drampool_yaml_config.cpp
     ${DRAMPOOL_SOURCE_DIR}/drampool_server.cpp
+    ${DRAMPOOL_SOURCE_DIR}/metadata.cc
     ${CMAKE_SOURCE_DIR}/ucm/store/dram/cc/kv_protocol.cpp
     ${DRAMPOOL_SOURCE_DIR}/task_worker.cpp
 )
@@ -27,14 +28,17 @@ target_link_libraries(drampool_core
         infra_template
         infra_thread
         buffer_pool
-        p2p_transport
+        ucm_p2p_transport
         trans
-        dramstore
         Threads::Threads
 )
 
 add_executable(drampool
     ${DRAMPOOL_SOURCE_DIR}/main.cpp
+)
+
+set_target_properties(drampool PROPERTIES
+    INSTALL_RPATH "$ORIGIN/../ucm/transport/p2p"
 )
 
 target_link_libraries(drampool

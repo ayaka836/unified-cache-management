@@ -9,13 +9,16 @@ PYTHON="${PYTHON:-python3}"
 
 if [[ -z "${UCM_P2P_ROOT:-}" ]]; then
     UCM_P2P_ROOT="$(${PYTHON} - <<'PY'
-from importlib.metadata import PackageNotFoundError, distribution
+from importlib.metadata import distributions
+from pathlib import Path
 
-try:
-    package = distribution("uc-manager")
-except PackageNotFoundError as error:
-    raise SystemExit("uc-manager is not installed") from error
-print(package.locate_file("ucm/transport/p2p"))
+for package in distributions(name="uc-manager"):
+    root = Path(package.locate_file("ucm/transport/p2p")).resolve()
+    if (root / "libucm_p2p_transport.so").is_file():
+        print(root)
+        break
+else:
+    raise SystemExit("installed uc-manager does not contain the P2P transport")
 PY
 )"
 fi

@@ -1,5 +1,4 @@
-file(GLOB_RECURSE UCM_DRAM_STORE_CC_SOURCE_FILES "./cc/*.cc")
-add_library(dramstore SHARED ${UCM_DRAM_STORE_CC_SOURCE_FILES})
+add_library(dramstore SHARED cc/dram_store.cc)
 target_include_directories(dramstore PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/cc)
 target_include_directories(dramstore PUBLIC
     ${CMAKE_SOURCE_DIR}/ucm/transport/p2p/include/one_sided)

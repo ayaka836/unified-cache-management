@@ -238,8 +238,10 @@ private:
         std::string error;
         RequestKind kind = RequestKind::Put;
         std::vector<BlockId> keys;
-        std::uint8_t* data = nullptr;
-        std::uint8_t* response = nullptr;
+        std::uint8_t* device_data = nullptr;
+        std::uint8_t* device_response = nullptr;
+        std::vector<std::uint8_t> host_data;
+        std::vector<std::uint8_t> host_response;
     };
 
     void Run()
@@ -281,9 +283,10 @@ private:
             return false;
         }
         data_slot_size_ = config_.block_num * config_.block_size;
-        response_slot_size_ =
-            UC::DramPool::kResponseResultsOffset +
-            UC::DramPool::Packed4BitResultSize(config_.block_num);
+        response_slot_size_ = std::max(
+            {protocol_.GetPackedResponseSize(KvOpcode::Dump, config_.block_num),
+             protocol_.GetPackedResponseSize(KvOpcode::Load, config_.block_num),
+             protocol_.GetPackedResponseSize(KvOpcode::Lookup, config_.block_num)});
         if (slot_count_ > std::numeric_limits<std::size_t>::max() / data_slot_size_) {
             error_ = "buffer size overflow";
             return false;
@@ -314,20 +317,22 @@ private:
 
         void* data_buffer = nullptr;
         void* flag_buffer = nullptr;
-        if (aclrtMallocHost(&data_buffer, slot_count_ * data_slot_size_) != ACL_SUCCESS ||
-            aclrtMallocHost(&flag_buffer, slot_count_ * response_slot_size_) != ACL_SUCCESS) {
-            if (data_buffer != nullptr) { aclrtFreeHost(data_buffer); }
-            if (flag_buffer != nullptr) { aclrtFreeHost(flag_buffer); }
-            error_ = "aclrtMallocHost failed";
+        if (aclrtMalloc(&data_buffer, slot_count_ * data_slot_size_, ACL_MEM_MALLOC_HUGE_FIRST) !=
+                ACL_SUCCESS ||
+            aclrtMalloc(&flag_buffer, slot_count_ * response_slot_size_, ACL_MEM_MALLOC_HUGE_FIRST) !=
+                ACL_SUCCESS) {
+            if (data_buffer != nullptr) { aclrtFree(data_buffer); }
+            if (flag_buffer != nullptr) { aclrtFree(flag_buffer); }
+            error_ = "aclrtMalloc device buffer failed";
             return false;
         }
         data_buffer_ = static_cast<std::uint8_t*>(data_buffer);
         flag_buffer_ = static_cast<std::uint8_t*>(flag_buffer);
 
         transport::MemoryRegion data_memory{data_buffer_, slot_count_ * data_slot_size_,
-                                            transport::MemoryType::Host, config_.device_id};
+                                            transport::MemoryType::Device, config_.device_id};
         transport::MemoryRegion flag_memory{flag_buffer_, slot_count_ * response_slot_size_,
-                                            transport::MemoryType::Host, config_.device_id};
+                                            transport::MemoryType::Device, config_.device_id};
         if (manager_->RegisterMemory(data_memory, data_handle_) != transport::Status::Ok ||
             manager_->RegisterMemory(flag_memory, flag_handle_) != transport::Status::Ok) {
             error_ = "RegisterMemory failed";
@@ -353,10 +358,13 @@ private:
 
         for (std::size_t i = 0; i < slot_count_; ++i) {
             auto slot = std::make_unique<RequestSlot>();
-            slot->data = data_buffer_ + i * data_slot_size_;
-            slot->response = flag_buffer_ + i * response_slot_size_;
+            slot->device_data = data_buffer_ + i * data_slot_size_;
+            slot->device_response = flag_buffer_ + i * response_slot_size_;
+            slot->host_data.resize(data_slot_size_);
+            slot->host_response.resize(response_slot_size_);
             slots_.push_back(std::move(slot));
         }
+        poller_failed_.store(false, std::memory_order_relaxed);
         poller_stop_.store(false, std::memory_order_release);
         poller_ = std::thread(&SimulatedStore::PollResponses, this);
         return true;
@@ -429,6 +437,10 @@ private:
 
     bool ExecuteRequests(const std::vector<RequestPlan>& requests)
     {
+        if (poller_failed_.load(std::memory_order_acquire)) {
+            error_ = "response poller failed to set ACL device";
+            return false;
+        }
         for (std::size_t i = 0; i < requests.size(); ++i) {
             if (!Submit(*slots_[i], requests[i])) { return false; }
         }
@@ -439,6 +451,10 @@ private:
             auto& slot = *slots_[i];
             while (!slot.done.load(std::memory_order_acquire) &&
                    std::chrono::steady_clock::now() < deadline) {
+                if (poller_failed_.load(std::memory_order_acquire)) {
+                    error_ = "response poller failed to set ACL device";
+                    return false;
+                }
                 std::this_thread::sleep_for(kPollInterval);
             }
             slot.active.store(false, std::memory_order_release);
@@ -461,34 +477,49 @@ private:
         slot.error.clear();
         slot.kind = plan.kind;
         slot.keys = plan.keys;
-        std::memset(slot.response, 0, response_slot_size_);
+        std::fill(slot.host_response.begin(), slot.host_response.end(), 0);
+        if (aclrtMemcpy(slot.device_response, response_slot_size_, slot.host_response.data(),
+                        response_slot_size_, ACL_MEMCPY_HOST_TO_DEVICE) != ACL_SUCCESS) {
+            error_ = "clear device response buffer failed";
+            return false;
+        }
 
         KvOpcode opcode = KvOpcode::None;
         std::unique_ptr<UC::DramPool::KvRequest> request;
         if (plan.kind == RequestKind::Put) {
             auto dump = std::make_unique<KvDumpRequest>();
             dump->opcode = KvOpcode::Dump;
-            dump->resp_addr = reinterpret_cast<std::uint64_t>(slot.response);
+            dump->resp_addr = reinterpret_cast<std::uint64_t>(slot.device_response);
             dump->batch_size = static_cast<std::uint16_t>(config_.block_num);
             dump->ttl = config_.ttl_ms;
             for (std::size_t block = 0; block < config_.block_num; ++block) {
-                auto* data = slot.data + block * config_.block_size;
-                FillData(data, config_.block_size, plan.keys[block]);
+                auto* host_data = slot.host_data.data() + block * config_.block_size;
+                auto* device_data = slot.device_data + block * config_.block_size;
+                FillData(host_data, config_.block_size, plan.keys[block]);
                 dump->entries.push_back(
-                    {plan.keys[block], reinterpret_cast<std::uint64_t>(data),
+                    {plan.keys[block], reinterpret_cast<std::uint64_t>(device_data),
                      static_cast<std::uint32_t>(config_.block_size),
                      static_cast<std::uint32_t>(block)});
+            }
+            if (aclrtMemcpy(slot.device_data, data_slot_size_, slot.host_data.data(),
+                            data_slot_size_, ACL_MEMCPY_HOST_TO_DEVICE) != ACL_SUCCESS) {
+                error_ = "copy put data to device failed";
+                return false;
             }
             opcode = KvOpcode::Dump;
             request = std::move(dump);
         } else if (plan.kind == RequestKind::Get) {
-            std::memset(slot.data, 0, data_slot_size_);
+            std::fill(slot.host_data.begin(), slot.host_data.end(), 0);
+            if (aclrtMemset(slot.device_data, data_slot_size_, 0, data_slot_size_) != ACL_SUCCESS) {
+                error_ = "clear get device buffer failed";
+                return false;
+            }
             auto load = std::make_unique<KvLoadRequest>();
             load->opcode = KvOpcode::Load;
-            load->resp_addr = reinterpret_cast<std::uint64_t>(slot.response);
+            load->resp_addr = reinterpret_cast<std::uint64_t>(slot.device_response);
             load->batch_size = static_cast<std::uint16_t>(config_.block_num);
             for (std::size_t block = 0; block < config_.block_num; ++block) {
-                auto* data = slot.data + block * config_.block_size;
+                auto* data = slot.device_data + block * config_.block_size;
                 load->entries.push_back(
                     {plan.keys[block], reinterpret_cast<std::uint64_t>(data),
                      static_cast<std::uint32_t>(config_.block_size),
@@ -499,7 +530,7 @@ private:
         } else {
             auto lookup = std::make_unique<KvLookupRequest>();
             lookup->opcode = KvOpcode::Lookup;
-            lookup->resp_addr = reinterpret_cast<std::uint64_t>(slot.response);
+            lookup->resp_addr = reinterpret_cast<std::uint64_t>(slot.device_response);
             lookup->batch_size = static_cast<std::uint16_t>(config_.block_num);
             for (const auto& key : plan.keys) {
                 lookup->entries.push_back(KvLookupEntry{key});
@@ -511,7 +542,7 @@ private:
         std::vector<std::uint8_t> packed;
         {
             std::lock_guard<std::mutex> lock(protocol_mutex_);
-            packed.resize(protocol_.GetPackedSize(opcode, *request));
+            packed.resize(protocol_.GetPackedRequestSize(opcode, *request));
             const auto status = protocol_.PackRequest(packed.data(), opcode, *request);
             if (status.Failure()) {
                 error_ = "PackRequest failed: " + status.ToString();
@@ -530,6 +561,10 @@ private:
 
     void PollResponses()
     {
+        if (aclrtSetDevice(config_.device_id) != ACL_SUCCESS) {
+            poller_failed_.store(true, std::memory_order_release);
+            return;
+        }
         while (!poller_stop_.load(std::memory_order_acquire)) {
             for (const auto& slot_ptr : slots_) {
                 auto& slot = *slot_ptr;
@@ -538,20 +573,26 @@ private:
                     continue;
                 }
 
+                if (aclrtMemcpy(slot.host_response.data(), response_slot_size_,
+                                slot.device_response, response_slot_size_,
+                                ACL_MEMCPY_DEVICE_TO_HOST) != ACL_SUCCESS) {
+                    Complete(slot, false, "copy response flag from device failed");
+                    continue;
+                }
                 bool ready = false;
                 KvResponse response;
                 UC::Status status = UC::Status::OK();
                 {
                     std::lock_guard<std::mutex> lock(protocol_mutex_);
-                    status = protocol_.IsResponseReady(slot.response, ready);
+                    status = protocol_.IsResponseReady(slot.host_response.data(), ready);
                     if (status.Success() && ready) {
                         const auto opcode = slot.kind == RequestKind::Put
                                                 ? KvOpcode::Dump
                                                 : (slot.kind == RequestKind::Get ? KvOpcode::Load
                                                                                  : KvOpcode::Lookup);
                         status = protocol_.UnpackResponse(
-                            slot.response, opcode, static_cast<std::uint16_t>(config_.block_num),
-                            response);
+                            slot.host_response.data(), opcode,
+                            static_cast<std::uint16_t>(config_.block_num), response);
                     }
                 }
                 if (status.Failure()) {
@@ -564,6 +605,12 @@ private:
                     continue;
                 }
 
+                if (slot.kind == RequestKind::Get &&
+                    aclrtMemcpy(slot.host_data.data(), data_slot_size_, slot.device_data,
+                                data_slot_size_, ACL_MEMCPY_DEVICE_TO_HOST) != ACL_SUCCESS) {
+                    Complete(slot, false, "copy get data from device failed");
+                    continue;
+                }
                 bool valid = true;
                 for (std::size_t block = 0; block < config_.block_num && valid; ++block) {
                     if (slot.kind == RequestKind::LookupExist) {
@@ -573,7 +620,7 @@ private:
                     } else {
                         valid = response.results[block] == kSuccessResult;
                         if (valid && slot.kind == RequestKind::Get) {
-                            valid = CheckData(slot.data + block * config_.block_size,
+                            valid = CheckData(slot.host_data.data() + block * config_.block_size,
                                               config_.block_size, slot.keys[block]);
                         }
                     }
@@ -607,8 +654,8 @@ private:
         if (control_started_) { control_.Shutdown(); }
         if (manager_started_) { manager_->Shutdown(); }
         manager_.reset();
-        if (flag_buffer_ != nullptr) { aclrtFreeHost(flag_buffer_); }
-        if (data_buffer_ != nullptr) { aclrtFreeHost(data_buffer_); }
+        if (flag_buffer_ != nullptr) { aclrtFree(flag_buffer_); }
+        if (data_buffer_ != nullptr) { aclrtFree(data_buffer_); }
         flag_buffer_ = nullptr;
         data_buffer_ = nullptr;
     }
@@ -617,6 +664,7 @@ private:
     std::thread worker_;
     std::thread poller_;
     std::atomic_bool poller_stop_{true};
+    std::atomic_bool poller_failed_{false};
     std::string error_;
     std::unique_ptr<transport::TransportManager> manager_;
     transport::TcpMessageChannel control_;
