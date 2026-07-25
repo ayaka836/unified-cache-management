@@ -367,6 +367,11 @@ Status HixlTransport::Connect(const ManagerID& manager_id)
     if (status != Status::OK()) { return status; }
 
     peer.connected = true;
+    UC_INFO_UNLIMITED(
+        "[Transport][HIXL] connect success: peer={} local_instance={} local_engine={} "
+        "local_device={} remote_engine={} remote_device={}",
+        manager_id, peer.local_index, instances_[peer.local_index]->LocalEndpoint().ToString(),
+        instances_[peer.local_index]->DeviceId(), remote_engine, peer.instances.front().device_id);
     return Status::OK();
 }
 

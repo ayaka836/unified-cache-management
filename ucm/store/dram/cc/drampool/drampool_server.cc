@@ -148,7 +148,7 @@ Status DramPoolServer::InitializeAclRuntime()
         return Status::Error("aclInit failed: " + std::to_string(initStatus));
     }
 
-    const auto setDeviceStatus = aclrtSetDevice(g_config.transportDeviceId);
+    const auto setDeviceStatus = aclrtSetDevice(g_config.transportDeviceIds.front());
     if (setDeviceStatus == ACL_SUCCESS) { return Status::OK(); }
 
     if (aclRuntimeOwned_) {
@@ -245,10 +245,13 @@ Status DramPoolServer::StartTransportService()
         return status;
     }
     attrs.ip = managerEndpoint.host;
-    transport::HixlInitAttrs::Instance instance;
-    instance.port = -1;
-    instance.device_id = g_config.transportDeviceId;
-    attrs.instances.push_back(std::move(instance));
+    attrs.instances.reserve(g_config.transportDeviceIds.size());
+    for (const auto deviceId : g_config.transportDeviceIds) {
+        transport::HixlInitAttrs::Instance instance;
+        instance.port = -1;
+        instance.device_id = deviceId;
+        attrs.instances.push_back(std::move(instance));
+    }
     attrs.connect_timeout_ms = static_cast<std::int32_t>(g_config.opTimeoutMs);
     attrs.transfer_timeout_ms = static_cast<std::int32_t>(g_config.opTimeoutMs);
     auto status = transportManager_->InstallTransport(transport::TransportProtocol::Hixl, attrs);
@@ -537,7 +540,7 @@ void DramPoolServer::ResetInitializedComponents()
     bufferManager_.reset();
     transportManager_.reset();
     if (aclRuntimeOwned_) {
-        (void)aclrtResetDevice(g_config.transportDeviceId);
+        (void)aclrtResetDevice(g_config.transportDeviceIds.front());
         (void)aclFinalize();
         aclRuntimeOwned_ = false;
     }

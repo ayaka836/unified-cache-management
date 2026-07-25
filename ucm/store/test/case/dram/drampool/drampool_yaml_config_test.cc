@@ -36,7 +36,7 @@ private:
 std::string ValidRuntimeYaml()
 {
     return R"(transport:
-  device_id: 0
+  device_ids: [0, 1]
   endpoints:
     - two_sided: "127.0.0.1:9000"
       one_sided: "127.0.0.1:4501"
@@ -114,7 +114,7 @@ TEST(DramPoolRuntimeYamlTest, LoadsEveryRuntimeFieldAndPreservesLaunchFields)
     ASSERT_EQ(config.twoSidedToOneSided.size(), 2U);
     EXPECT_EQ(config.twoSidedToOneSided.at("127.0.0.1:9000"), "127.0.0.1:4501");
     EXPECT_EQ(config.twoSidedToOneSided.at("127.0.0.1:9001"), "127.0.0.1:4502");
-    EXPECT_EQ(config.transportDeviceId, 0);
+    EXPECT_EQ(config.transportDeviceIds, (std::vector<std::int32_t>{0, 1}));
     EXPECT_EQ(config.requestQueueDepth, 65536U);
     EXPECT_EQ(config.completionQueueDepth, 65536U);
     EXPECT_EQ(config.requestReceiverIdleWaitUs, 100U);
@@ -157,7 +157,7 @@ TEST(DramPoolRuntimeYamlTest, RejectsMissingUnknownAndDuplicateKeys)
     const std::vector<std::pair<std::string, std::string>> cases = {
         {ReplaceOnce(ValidRuntimeYaml(), "  max_size_mb: 5\n", ""), "missing required key"},
         {ValidRuntimeYaml() + "unknown: 1\n", "unknown DramPool runtime YAML key"},
-        {ValidRuntimeYaml() + "transport:\n  device_id: 0\n", "duplicate YAML key"},
+        {ValidRuntimeYaml() + "transport:\n  device_ids: [0]\n", "duplicate YAML key"},
     };
     for (const auto& item : cases) {
         auto config = LaunchConfig();
@@ -171,12 +171,12 @@ TEST(DramPoolRuntimeYamlTest, RejectsMissingUnknownAndDuplicateKeys)
 TEST(DramPoolRuntimeYamlTest, FailureDoesNotPartiallyModifyConfiguration)
 {
     auto config = LaunchConfig();
-    config.transportDeviceId = 37;
+    config.transportDeviceIds = {37};
     RuntimeYamlFile yaml(ReplaceOnce(ValidRuntimeYaml(), "  max_size_mb: 5", "  max_size_mb: 0"));
 
     EXPECT_TRUE(ParseYamlConfig(yaml.Path().string(), config).Failure());
 
-    EXPECT_EQ(config.transportDeviceId, 37);
+    EXPECT_EQ(config.transportDeviceIds, (std::vector<std::int32_t>{37}));
     EXPECT_TRUE(config.twoSidedToOneSided.empty());
     EXPECT_EQ(config.poolSizeGb, 7U);
 }
@@ -204,7 +204,12 @@ INSTANTIATE_TEST_SUITE_P(
                         "one_sided: \"127.0.0.1:4501\"", "duplicate transport one_sided"},
         InvalidYamlCase{"EndpointInBothRoles", "one_sided: \"127.0.0.1:4502\"",
                         "one_sided: \"127.0.0.1:9000\"", "both two_sided and one_sided"},
-        InvalidYamlCase{"NegativeDevice", "device_id: 0", "device_id: -1", "must not be negative"},
+        InvalidYamlCase{"NegativeDevice", "device_ids: [0, 1]", "device_ids: [0, -1]",
+                        "must not be negative"},
+        InvalidYamlCase{"DuplicateDevice", "device_ids: [0, 1]", "device_ids: [0, 0]",
+                        "duplicate device id"},
+        InvalidYamlCase{"EmptyDevices", "device_ids: [0, 1]", "device_ids: []",
+                        "must not be empty"},
         InvalidYamlCase{"QueueTooShallow", "request_depth: 65536", "request_depth: 1",
                         "at least 2"},
         InvalidYamlCase{"ZeroPollerPendingDepth", "pending_depth: 64", "pending_depth: 0",

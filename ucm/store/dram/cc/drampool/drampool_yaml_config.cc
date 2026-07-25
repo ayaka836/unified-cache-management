@@ -53,7 +53,7 @@ struct EndpointEntry {
 };
 
 constexpr const char* kRequiredRuntimeConfigKeys[] = {
-    "transport.device_id",
+    "transport.device_ids",
     "queue.request_depth",
     "queue.completion_depth",
     "request_receiver.idle_wait_us",
@@ -175,6 +175,47 @@ Status ParseInt32Value(const std::string& key, const std::string& value, std::in
     return Status::OK();
 }
 
+Status ParseInt32ListValue(const std::string& key, const std::string& value,
+                           std::vector<std::int32_t>& output)
+{
+    const auto trimmed = Trim(value);
+    if (trimmed.size() < 2 || trimmed.front() != '[' || trimmed.back() != ']') {
+        return Status::InvalidParam("invalid YAML value for {}: expected an inline list", key);
+    }
+
+    const auto contents = Trim(trimmed.substr(1, trimmed.size() - 2));
+    if (contents.empty()) {
+        return Status::InvalidParam("{} must not be empty", key);
+    }
+
+    std::vector<std::int32_t> parsed;
+    std::unordered_set<std::int32_t> unique;
+    std::size_t begin = 0;
+    while (begin <= contents.size()) {
+        const auto end = contents.find(',', begin);
+        const auto token = Trim(contents.substr(
+            begin, end == std::string::npos ? std::string::npos : end - begin));
+        std::int32_t deviceId = -1;
+        if (token.empty()) {
+            return Status::InvalidParam("invalid YAML value for {}: empty list item", key);
+        }
+        if (auto status = ParseInt32Value(key, token, deviceId); status.Failure()) {
+            return status;
+        }
+        if (deviceId < 0) {
+            return Status::InvalidParam("{} entries must not be negative", key);
+        }
+        if (!unique.insert(deviceId).second) {
+            return Status::InvalidParam("{} contains duplicate device id {}", key, deviceId);
+        }
+        parsed.push_back(deviceId);
+        if (end == std::string::npos) { break; }
+        begin = end + 1;
+    }
+    output = std::move(parsed);
+    return Status::OK();
+}
+
 Status ParseBoolValue(const std::string& key, const std::string& value, bool& output)
 {
     const auto normalized = ToLower(value);
@@ -261,8 +302,8 @@ Status CommitEndpointEntry(EndpointEntry& entry, DramPoolConfig& config,
 Status ApplyRuntimeConfigValue(DramPoolConfig& config, const std::string& key,
                                const std::string& value)
 {
-    if (key == "transport.device_id") {
-        return ParseInt32Value(key, value, config.transportDeviceId);
+    if (key == "transport.device_ids") {
+        return ParseInt32ListValue(key, value, config.transportDeviceIds);
     }
     if (key == "queue.request_depth") {
         return ParseUint32Value(key, value, config.requestQueueDepth);
@@ -330,8 +371,8 @@ Status ValidateRuntimeConfig(DramPoolConfig& config)
                 "transport endpoint cannot be both two_sided and one_sided: {}", endpoint.second);
         }
     }
-    if (config.transportDeviceId < 0) {
-        return Status::InvalidParam("transport.device_id must not be negative");
+    if (config.transportDeviceIds.empty()) {
+        return Status::InvalidParam("transport.device_ids must not be empty");
     }
     if (config.requestQueueDepth < 2 || config.completionQueueDepth < 2) {
         return Status::InvalidParam("queue depths must be at least 2");
