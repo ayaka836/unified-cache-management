@@ -126,6 +126,9 @@ bool CompletionPoller::PollDataTransfer(CompletionRecord& record)
     if (queryStatus.Failure()) {
         // GetStatus removes failed handles, so an API failure is also terminal.
         UC_ERROR("CompletionPoller data GetStatus failed, handle={}", record.data_handle);
+        if (!record.disconnect_attempted) {
+            RecoverPeer(record, record.data_handle, "data status");
+        }
         SettleDataTransfer(record, transport::TransferStatus::Failed);
         record.data_handle = transport::kInvalidTransferHandle;
         record.stage = CompletionStage::SubmitResponse;
@@ -136,11 +139,19 @@ bool CompletionPoller::PollDataTransfer(CompletionRecord& record)
         if (!record.disconnect_attempted &&
             (disconnectAllTransfers_.load(std::memory_order_acquire) ||
              OperationTimedOut(record, SteadyNowMs()))) {
-            DisconnectPeer(record, record.data_handle, "data");
+            if (disconnectAllTransfers_.load(std::memory_order_acquire)) {
+                DisconnectPeer(record, record.data_handle, "data");
+            } else {
+                RecoverPeer(record, record.data_handle, "data timeout");
+            }
         }
         return false;
     }
 
+    if (transportStatus != transport::TransferStatus::Completed &&
+        !record.disconnect_attempted) {
+        RecoverPeer(record, record.data_handle, "data failure");
+    }
     // A terminal GetStatus releases the data handle before business state is settled.
     SettleDataTransfer(record, transportStatus);
     record.data_handle = transport::kInvalidTransferHandle;
@@ -189,6 +200,7 @@ Status CompletionPoller::SubmitResponse(CompletionRecord& record)
     const auto submitStatus = runtime_.transport.ExecuteAsync(operation, handle);
     if (submitStatus.Failure() || handle == transport::kInvalidTransferHandle) {
         ReleaseResponseBuffer(runtime_.flagBufferPool, record, "response submission");
+        RecoverPeer(record, handle, "response submission");
         if (submitStatus.Failure()) { return submitStatus; }
         return Status::Error("ExecuteAsync response returned an invalid handle");
     }
@@ -209,15 +221,25 @@ bool CompletionPoller::PollResponseTransfer(CompletionRecord& record)
     if (queryStatus.Failure()) {
         // GetStatus removes failed handles, so the response source buffer is no longer in use.
         UC_ERROR("CompletionPoller response GetStatus failed, handle={}", record.response_handle);
+        if (!record.disconnect_attempted) {
+            RecoverPeer(record, record.response_handle, "response status");
+        }
     } else if (transportStatus == transport::TransferStatus::Waiting) {
         if (!record.disconnect_attempted &&
             (disconnectAllTransfers_.load(std::memory_order_acquire) ||
              OperationTimedOut(record, SteadyNowMs()))) {
-            DisconnectPeer(record, record.response_handle, "response");
+            if (disconnectAllTransfers_.load(std::memory_order_acquire)) {
+                DisconnectPeer(record, record.response_handle, "response");
+            } else {
+                RecoverPeer(record, record.response_handle, "response timeout");
+            }
         }
         return false;
     } else if (transportStatus != transport::TransferStatus::Completed) {
         UC_ERROR("CompletionPoller response transfer failed, handle={}", record.response_handle);
+        if (!record.disconnect_attempted) {
+            RecoverPeer(record, record.response_handle, "response failure");
+        }
     }
 
     const auto releasedSlot = record.resp_buffer.slot_index;
@@ -305,6 +327,30 @@ void CompletionPoller::DisconnectPeer(CompletionRecord& record, TransportHandle 
         return;
     }
     record.disconnect_attempted = true;
+}
+
+void CompletionPoller::RecoverPeer(CompletionRecord& record, TransportHandle handle,
+                                   const char* transferType)
+{
+    DisconnectPeer(record, handle, transferType);
+    if (disconnectAllTransfers_.load(std::memory_order_acquire)) {
+        return;
+    }
+
+    const auto status =
+        runtime_.transport.Connect(transport::TransportProtocol::Hixl, record.peer_one_sided_id);
+    if (status.Failure()) {
+        UC_ERROR(
+            "CompletionPoller reconnect peer failed, transfer_type={}, peer={}, handle={}, "
+            "error={}",
+            transferType, record.peer_one_sided_id, handle, status);
+        return;
+    }
+    record.disconnect_attempted = true;
+    UC_INFO_UNLIMITED(
+        "CompletionPoller recovered peer after transfer failure, transfer_type={}, peer={}, "
+        "handle={}",
+        transferType, record.peer_one_sided_id, handle);
 }
 
 }  // namespace UC::DramPool

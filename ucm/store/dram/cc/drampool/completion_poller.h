@@ -31,6 +31,7 @@ private:
     void SettleDataTransfer(CompletionRecord& record, transport::TransferStatus terminalStatus);
     bool OperationTimedOut(const CompletionRecord& record, std::uint64_t nowMs) const;
     void DisconnectPeer(CompletionRecord& record, TransportHandle handle, const char* transferType);
+    void RecoverPeer(CompletionRecord& record, TransportHandle handle, const char* transferType);
 
     DramPoolRuntime& runtime_;
     std::deque<CompletionRecord> pending_;

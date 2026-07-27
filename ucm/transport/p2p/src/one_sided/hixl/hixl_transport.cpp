@@ -386,10 +386,11 @@ Status HixlTransport::Disconnect(const ManagerID& manager_id)
     if (peer.local_index >= instances_.size() || peer.instances.empty()) { return Status::Error(); }
 
     const auto status = DisconnectRoute(peer, false);
-    if (status != Status::OK()) { return status; }
-
+    // A failed native disconnect cannot leave the logical route connected: callers use
+    // Disconnect followed by Connect to recover a failed communicator. Keeping this bit set
+    // would make Connect return success without issuing a new native HIXL connection.
     peer.connected = false;
-    return Status::OK();
+    return status;
 }
 
 Status HixlTransport::ValidateTransferLocked(const Operation& batch, size_t instance_index) const
