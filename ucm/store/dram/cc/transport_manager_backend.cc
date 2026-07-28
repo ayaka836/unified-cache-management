@@ -27,6 +27,13 @@
 #include "logger/logger.h"
 
 namespace UC::Dram {
+namespace {
+
+constexpr const char* kHixlGlobalResourceConfig = "GlobalResourceConfig";
+constexpr const char* kHixlGlobalResourceConfigValue =
+    R"({"comm_resource_config.listen_port":"27777"})";
+
+}  // namespace
 
 TransportManagerBackend::TransportManagerBackend(TransportManagerBackendOptions options)
     : options_(std::move(options)), manager_(options_.localTransportManagerId)
@@ -48,7 +55,11 @@ Status TransportManagerBackend::Init()
     // TODO: make transport backend configurable
     transport::HixlInitAttrs attrs;
     attrs.ip = options_.localHost;
-    attrs.instances.push_back(transport::HixlInitAttrs::Instance{-1, options_.deviceId, {}});
+    transport::HixlInitAttrs::Instance instance;
+    instance.port = -1;
+    instance.device_id = options_.deviceId;
+    instance.options[kHixlGlobalResourceConfig] = kHixlGlobalResourceConfigValue;
+    attrs.instances.push_back(std::move(instance));
     attrs.connect_timeout_ms = options_.connectTimeoutMs;
     attrs.transfer_timeout_ms = options_.transferTimeoutMs;
     auto transportStatus = manager_.Init();
