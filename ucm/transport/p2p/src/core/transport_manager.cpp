@@ -370,6 +370,17 @@ Status TransportManager::CoordinateConnectionWithPeer(ControlOperation operation
                                                       TransportProtocol protocol,
                                                       const ManagerID& manager_id)
 {
+    {
+        std::lock_guard<std::recursive_mutex> lock(peer_mutex_);
+        if (shutting_down_ && operation == ControlOperation::Connect) { return Status::Error(); }
+        const auto connection = std::make_pair(protocol, manager_id);
+        const bool connected = connections_.find(connection) != connections_.end();
+        if ((operation == ControlOperation::Connect && connected) ||
+            (operation == ControlOperation::Disconnect && !connected)) {
+            return Status::OK();
+        }
+    }
+
     Endpoint endpoint;
     if (ParseManagerID(manager_id, endpoint) != Status::OK() || !control_) {
         return Status::InvalidParam();

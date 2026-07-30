@@ -123,6 +123,13 @@ Status HixlTransport::Init(const HixlInitAttrs& attrs)
 {
     if (!instances_.empty()) { return Status::OK(); }
     if (attrs.instances.empty()) { return Status::InvalidParam(); }
+    if (attrs.role != HixlRole::Client && attrs.instances.size() > 1) {
+        UC_ERROR(
+            "[Transport][HIXL] only Client role supports multiple instances: role={} "
+            "instances={}",
+            static_cast<uint32_t>(attrs.role), attrs.instances.size());
+        return Status::InvalidParam();
+    }
 
     for (size_t i = 0; i < attrs.instances.size(); ++i) {
         const auto& instance_attrs = attrs.instances[i];
@@ -316,14 +323,33 @@ Status HixlTransport::BuildRouteLocked(const ManagerID& manager_id, Peer& peer)
         return Status::InvalidParam();
     }
 
+    const auto& remote = peer.instances.front();
     const auto local_count = instances_.size();
+    if (local_count == 1) {
+        if (peer.instances.size() == 1 &&
+            instances_.front()->LocalEndpoint().host == remote.endpoint.host &&
+            instances_.front()->DeviceId() == remote.device_id) {
+            UC_ERROR(
+                "[Transport][HIXL] build route failed: local and remote single instances use "
+                "the same device, endpoint={} device={}",
+                remote.endpoint.ToString(), remote.device_id);
+            return Status::Error();
+        }
+        peer.local_index = 0;
+        UC_DEBUG(
+            "[Transport][HIXL] build route peer={} local_instance=0 local_engine={} "
+            "local_device={} remote_engine={} remote_device={}",
+            manager_id, instances_.front()->LocalEndpoint().ToString(),
+            instances_.front()->DeviceId(), remote.endpoint.ToString(), remote.device_id);
+        return Status::OK();
+    }
+
     std::vector<size_t> load(local_count, 0);
     for (const auto& item : peers_) {
         if (item.first == manager_id) { continue; }
         if (item.second.local_index < load.size()) { ++load[item.second.local_index]; }
     }
 
-    const auto& remote = peer.instances.front();
     std::vector<size_t> candidates;
     size_t min_load = std::numeric_limits<size_t>::max();
     for (size_t local_index = 0; local_index < local_count; ++local_index) {
