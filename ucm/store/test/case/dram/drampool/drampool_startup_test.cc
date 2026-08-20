@@ -483,7 +483,7 @@ TEST(DramPoolServerTest, RejectsCallsOutsideValidState)
 
 #if defined(UCM_DRAMPOOL_RUNTIME_INTEGRATION_TESTS)
 #if !defined(_WIN32)
-TEST(DramPoolServerTest, RequestReceiverLogsReceivedRequestFields)
+TEST(DramPoolServerTest, RequestReceiverLogsRequestCompletion)
 {
     constexpr std::uint64_t kRequestId = 42;
     const auto logRoot = std::filesystem::temp_directory_path() /
@@ -528,22 +528,17 @@ TEST(DramPoolServerTest, RequestReceiverLogsReceivedRequestFields)
         if (protocol.PackRequest(packed.data(), request.opcode, request).Failure()) { ::_exit(4); }
         if (client.Send(g_config.addr, packed.data(), packed.size()).Failure()) { ::_exit(5); }
 
-        const auto expected =
-            "[PERF] component=drampool event=stage request_id=" + std::to_string(kRequestId) +
-            " opcode=" + std::to_string(static_cast<int>(KvOpcode::Lookup)) + " control=";
         const auto completed =
             "[PERF] component=drampool event=request_done request_id=" + std::to_string(kRequestId);
         const auto logPath = logRoot / std::to_string(::getpid()) / "ucm.log";
-        bool stageFound = false;
         bool completionFound = false;
-        for (int attempt = 0; attempt < 200 && (!stageFound || !completionFound); ++attempt) {
+        for (int attempt = 0; attempt < 200 && !completionFound; ++attempt) {
             UC::Logger::Flush();
             std::ifstream input(logPath);
             const std::string content((std::istreambuf_iterator<char>(input)),
                                       std::istreambuf_iterator<char>());
-            stageFound = content.find(expected) != std::string::npos;
             completionFound = content.find(completed) != std::string::npos;
-            if (!stageFound || !completionFound) {
+            if (!completionFound) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
             }
         }
@@ -551,7 +546,7 @@ TEST(DramPoolServerTest, RequestReceiverLogsReceivedRequestFields)
         (void)client.Shutdown();
         server.Stop();
         UC::Logger::Flush();
-        ::_exit(stageFound && completionFound ? 0 : 6);
+        ::_exit(completionFound ? 0 : 6);
     }
 
     int childStatus = 0;
@@ -563,10 +558,8 @@ TEST(DramPoolServerTest, RequestReceiverLogsReceivedRequestFields)
     std::ifstream input(logPath);
     const std::string content((std::istreambuf_iterator<char>(input)),
                               std::istreambuf_iterator<char>());
-    const auto messagePosition = content.find("[PERF] component=drampool event=stage request_id=");
-    ASSERT_NE(messagePosition, std::string::npos);
-    const auto messageEnd = content.find('\n', messagePosition);
-    std::cout << content.substr(messagePosition, messageEnd - messagePosition) << std::endl;
+    EXPECT_EQ(content.find("[PERF] component=drampool event=stage request_id="),
+              std::string::npos);
     const auto completionPosition =
         content.find("[PERF] component=drampool event=request_done request_id=");
     ASSERT_NE(completionPosition, std::string::npos);
