@@ -313,10 +313,12 @@ Status HixlInstance::GetTransferStatus(hixl::TransferReq request, TransferStatus
                                        TransportCallTiming* timing)
 {
     status = TransferStatus::Failed;
+    UC_INFO("[METRIC DEBUG] HIXL instance GetTransferStatus START:{}", SteadyNowUs());
     return Run([&](hixl::Hixl& engine) {
         hixl::TransferStatus native_transfer_status = hixl::TransferStatus::WAITING;
         if (timing != nullptr) {
             timing->backend_called_us = SteadyNowUs();
+            UC_INFO("[METRIC DEBUG] HIXL instance GetTransferStatus RUN:{}", SteadyNowUs());
             timing->backend_called_ts_us = UnixNowUs();
         }
         const auto native_status = engine.GetTransferStatus(request, native_transfer_status);

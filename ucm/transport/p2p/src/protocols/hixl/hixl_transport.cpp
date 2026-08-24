@@ -14,6 +14,12 @@
 
 namespace transport {
 namespace {
+std::uint64_t SteadyNowUs()
+{
+    const auto now = std::chrono::steady_clock::now().time_since_epoch();
+    return static_cast<std::uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(now).count());
+}
 
 Status PickAvailablePort(const std::string& host, uint16_t& port)
 {
@@ -680,12 +686,15 @@ Status HixlTransport::ExecuteAsync(const Operation& batch, TransferHandle& handl
 Status HixlTransport::GetStatus(TransferHandle handle, TransferStatus& status,
                                 TransportCallTiming* timing)
 {
+    UC_INFO("[METRIC DEBUG] HIXL transport GetStatus START:{}", SteadyNowUs());
+    
     status = TransferStatus::Failed;
     if (handle == kInvalidTransferHandle) {
         UC_ERROR("[Transport][HIXL] get status failed: invalid handle");
         return Status::InvalidParam();
     }
     std::shared_lock<std::shared_mutex> lifecycle_lock(lifecycle_mutex_);
+    UC_INFO("[METRIC DEBUG] HIXL transport GetStatus get lifecycle_lock:{}", SteadyNowUs());
     PendingTransfer pending;
     {
         std::lock_guard<std::mutex> pending_lock(pending_mutex_);
@@ -697,10 +706,11 @@ Status HixlTransport::GetStatus(TransferHandle handle, TransferStatus& status,
         }
         pending = it->second;
     }
-
+    UC_INFO("[METRIC DEBUG] HIXL transport GetStatus get pending_mutex_:{}", SteadyNowUs());
     TransferStatus transfer_status = TransferStatus::Waiting;
     const auto query_status = instances_[pending.instance_index]->GetTransferStatus(
         pending.request, transfer_status, timing);
+    UC_INFO("[METRIC DEBUG] HIXL transport GetStatus get task status:{}", SteadyNowUs());
     if (query_status != Status::OK()) {
         std::lock_guard<std::mutex> pending_lock(pending_mutex_);
         pending_transfers_.erase(handle);
@@ -715,6 +725,7 @@ Status HixlTransport::GetStatus(TransferHandle handle, TransferStatus& status,
         UC_DEBUG("[Transport][HIXL] asynchronous transfer completed: handle={} status={}", handle,
                  static_cast<int>(status));
     }
+    UC_INFO("[METRIC DEBUG] HIXL transport GetStatus return:{}", SteadyNowUs());
     return Status::OK();
 }
 

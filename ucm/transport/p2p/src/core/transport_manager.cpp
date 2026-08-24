@@ -695,6 +695,7 @@ Status TransportManager::GetStatus(TransferHandle handle, TransferStatus& transf
     callTiming = {};
     callTiming.manager_entered_us = SteadyNowUs();
     callTiming.manager_entered_ts_us = UnixNowUs();
+    UC_INFO("[METRIC DEBUG] TransportManager GetStatus START:{}", SteadyNowUs());
     if (handle == kInvalidTransferHandle) { return Status::InvalidParam(); }
     TransferRecord record;
     {
@@ -706,8 +707,10 @@ Status TransportManager::GetStatus(TransferHandle handle, TransferStatus& transf
         }
         record = it->second;
     }
+    UC_INFO("[METRIC DEBUG] TransportManager GetStatus get record:{}", SteadyNowUs());
     const auto status =
         record.transport->GetStatus(record.transport_handle, transfer_status, &callTiming);
+    UC_INFO("[METRIC DEBUG] TransportManager GetStatus get task status:{}", SteadyNowUs());
     if (status != Status::OK() || transfer_status != TransferStatus::Waiting) {
         const auto completedUs = SteadyNowUs();
         const auto completedTsUs = UnixNowUs();
@@ -732,6 +735,7 @@ Status TransportManager::GetStatus(TransferHandle handle, TransferStatus& transf
         std::lock_guard<std::mutex> lock(transfers_mutex_);
         transfers_.erase(handle);
     }
+    UC_INFO("[METRIC DEBUG] TransportManager GetStatus return:{}", SteadyNowUs());
     return status;
 }
 
