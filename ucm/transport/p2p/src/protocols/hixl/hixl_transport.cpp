@@ -624,7 +624,10 @@ Status HixlTransport::ExecuteSync(const Operation& batch)
 Status HixlTransport::ExecuteAsync(const Operation& batch, TransferHandle& handle,
                                    TransportCallTiming* timing)
 {
+    UC_INFO_UNLIMITED("[METRIC DEBUG] HIXL transport ExecuteAsync START:{}", SteadyNowUs());
     std::shared_lock<std::shared_mutex> lifecycle_lock(lifecycle_mutex_);
+    UC_INFO_UNLIMITED("[METRIC DEBUG] HIXL transport ExecuteAsync get lifecycle_lock:{}",
+                      SteadyNowUs());
     handle = kInvalidTransferHandle;
     if (role_ == HixlRole::Server) {
         UC_ERROR("[Transport][HIXL] server role cannot initiate asynchronous transfer");
@@ -653,6 +656,8 @@ Status HixlTransport::ExecuteAsync(const Operation& batch, TransferHandle& handl
         local_index = peer_state.local_index;
         remote_engine = peer_state.instances.front().endpoint.ToString();
     }
+    UC_INFO_UNLIMITED("[METRIC DEBUG] HIXL transport ExecuteAsync get peer route:{}",
+                      SteadyNowUs());
 
     {
         std::shared_lock<std::shared_mutex> memory_lock(memories_mutex_);
@@ -663,10 +668,14 @@ Status HixlTransport::ExecuteAsync(const Operation& batch, TransferHandle& handl
             return transfer_status;
         }
     }
+    UC_INFO_UNLIMITED("[METRIC DEBUG] HIXL transport ExecuteAsync validate memory:{}",
+                      SteadyNowUs());
 
     hixl::TransferReq request = nullptr;
     const auto status = instances_[local_index]->TransferAsync(remote_engine, batch.opcode,
                                                                batch.ops, request, timing);
+    UC_INFO_UNLIMITED("[METRIC DEBUG] HIXL transport ExecuteAsync instance returned:{}",
+                      SteadyNowUs());
     if (status != Status::OK()) { return status; }
 
     {
@@ -675,11 +684,14 @@ Status HixlTransport::ExecuteAsync(const Operation& batch, TransferHandle& handl
         if (handle == kInvalidTransferHandle) { handle = next_transfer_handle_++; }
         pending_transfers_.emplace(handle, PendingTransfer{local_index, request});
     }
+    UC_INFO_UNLIMITED("[METRIC DEBUG] HIXL transport ExecuteAsync pending inserted:{}",
+                      SteadyNowUs());
     UC_DEBUG(
         "[Transport][HIXL] asynchronous transfer tracked: peer={} opcode={} segments={} "
         "instance={} handle={} request={}",
         batch.target_manager, static_cast<int>(batch.opcode), batch.ops.size(), local_index, handle,
         request);
+    UC_INFO_UNLIMITED("[METRIC DEBUG] HIXL transport ExecuteAsync return:{}", SteadyNowUs());
     return Status::OK();
 }
 
@@ -687,7 +699,7 @@ Status HixlTransport::GetStatus(TransferHandle handle, TransferStatus& status,
                                 TransportCallTiming* timing)
 {
     UC_INFO("[METRIC DEBUG] HIXL transport GetStatus START:{}", SteadyNowUs());
-    
+
     status = TransferStatus::Failed;
     if (handle == kInvalidTransferHandle) {
         UC_ERROR("[Transport][HIXL] get status failed: invalid handle");

@@ -637,10 +637,13 @@ Status TransportManager::ExecuteAsync(const Operation& batch, TransferHandle& ha
     callTiming = {};
     callTiming.manager_entered_us = SteadyNowUs();
     callTiming.manager_entered_ts_us = UnixNowUs();
+    UC_INFO_UNLIMITED("[METRIC DEBUG] TransportManager ExecuteAsync START:{}", SteadyNowUs());
     handle = kInvalidTransferHandle;
     Transport* transport = nullptr;
     auto request = batch;
     auto status = FindTransport(request, transport);
+    UC_INFO_UNLIMITED("[METRIC DEBUG] TransportManager ExecuteAsync find transport:{}",
+                      SteadyNowUs());
     if (status != Status::OK()) {
         UC_ERROR("transport manager async transfer selection failed peer={} status={}",
                  batch.target_manager, status.Underlying());
@@ -652,6 +655,8 @@ Status TransportManager::ExecuteAsync(const Operation& batch, TransferHandle& ha
     const auto submitStartedUs = SteadyNowUs();
     TransferHandle transport_handle = kInvalidTransferHandle;
     status = transport->ExecuteAsync(request, transport_handle, &callTiming);
+    UC_INFO_UNLIMITED("[METRIC DEBUG] TransportManager ExecuteAsync backend returned:{}",
+                      SteadyNowUs());
     if (status != Status::OK() || transport_handle == kInvalidTransferHandle) {
         UC_ERROR(
             "transport manager async transfer submit failed peer={} segments={} status={} "
@@ -671,6 +676,8 @@ Status TransportManager::ExecuteAsync(const Operation& batch, TransferHandle& ha
                                    request.opcode, request.direct, request.ops.size(), bytes,
                                    submittedUs, submittedTsUs, submittedUs - submitStartedUs});
     }
+    UC_INFO_UNLIMITED("[METRIC DEBUG] TransportManager ExecuteAsync record inserted:{}",
+                      SteadyNowUs());
     UC_INFO(
         "[PERF] component=transport event=transfer_submitted manager={} target={} handle={} "
         "transport_handle={} opcode={} direct={} segments={} bytes={} submitted_ts_us={} "
@@ -684,6 +691,7 @@ Status TransportManager::ExecuteAsync(const Operation& batch, TransferHandle& ha
             ? callTiming.backend_called_us - callTiming.manager_entered_us
             : 0,
         submittedUs - submitStartedUs);
+    UC_INFO_UNLIMITED("[METRIC DEBUG] TransportManager ExecuteAsync return:{}", SteadyNowUs());
     return Status::OK();
 }
 

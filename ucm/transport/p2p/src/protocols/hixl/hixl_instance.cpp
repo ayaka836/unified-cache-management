@@ -280,17 +280,25 @@ Status HixlInstance::TransferAsync(const std::string& remote_engine, Opcode opco
                                    const std::vector<Segment>& segments, hixl::TransferReq& request,
                                    TransportCallTiming* timing)
 {
+    UC_INFO_UNLIMITED("[METRIC DEBUG] HIXL instance TransferAsync START:{}", SteadyNowUs());
     hixl::TransferReq native_request = nullptr;
     const auto status = Run([&](hixl::Hixl& engine) {
+        UC_INFO_UNLIMITED("[METRIC DEBUG] HIXL instance TransferAsync RUN:{}", SteadyNowUs());
         const auto descs = BuildTransferOpDesc(segments);
+        UC_INFO_UNLIMITED("[METRIC DEBUG] HIXL instance TransferAsync descriptors built:{}",
+                          SteadyNowUs());
         hixl::TransferArgs args;
         const auto operation = opcode == Opcode::Read ? hixl::READ : hixl::WRITE;
         if (timing != nullptr) {
             timing->backend_called_us = SteadyNowUs();
             timing->backend_called_ts_us = UnixNowUs();
         }
+        UC_INFO_UNLIMITED("[METRIC DEBUG] HIXL instance TransferAsync native call begin:{}",
+                          SteadyNowUs());
         const auto native_status =
             engine.TransferAsync(remote_engine.c_str(), operation, descs, args, native_request);
+        UC_INFO_UNLIMITED("[METRIC DEBUG] HIXL instance TransferAsync native call returned:{}",
+                          SteadyNowUs());
         if (native_status != hixl::SUCCESS || native_request == nullptr) {
             UC_ERROR(
                 "[Transport][HIXL] async operation failed: TransferAsync(\"{}\", ops={}) returned "
@@ -305,7 +313,9 @@ Status HixlInstance::TransferAsync(const std::string& remote_engine, Opcode opco
             native_request);
         return Status::OK();
     });
+    UC_INFO_UNLIMITED("[METRIC DEBUG] HIXL instance TransferAsync Run returned:{}", SteadyNowUs());
     if (status == Status::OK()) { request = native_request; }
+    UC_INFO_UNLIMITED("[METRIC DEBUG] HIXL instance TransferAsync return:{}", SteadyNowUs());
     return status;
 }
 
