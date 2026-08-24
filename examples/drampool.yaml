@@ -5,16 +5,56 @@
 #   --kvcache-block-proportions, --ttl-minutes, and --config.
 
 transport:
-  device_ids: [0, 1, 2]
+  device_ids: [0, 1]
   hixl:
     listen_port: 26666
     enable_cs: false
   # Cluster-wide request-channel to transport-endpoint routing.
   endpoints:
     - two_sided: "127.0.0.1:9000"
-      one_sided: "127.0.0.1:4501"
+      one_sided: "127.0.0.1:8000"
     - two_sided: "127.0.0.1:9001"
+      one_sided: "127.0.0.1:8001"
+    - two_sided: "127.0.0.1:4700"
+      one_sided: "127.0.0.1:4500"
+    - two_sided: "127.0.0.1:4701"
+      one_sided: "127.0.0.1:4501"
+    - two_sided: "127.0.0.1:4702"
       one_sided: "127.0.0.1:4502"
+    - two_sided: "127.0.0.1:4703"
+      one_sided: "127.0.0.1:4503"
+    - two_sided: "127.0.0.1:4704"
+      one_sided: "127.0.0.1:4504"
+    - two_sided: "127.0.0.1:4705"
+      one_sided: "127.0.0.1:4505"
+    - two_sided: "127.0.0.1:4706"
+      one_sided: "127.0.0.1:4506"
+    - two_sided: "127.0.0.1:4707"
+      one_sided: "127.0.0.1:4507"
+    - two_sided: "127.0.0.1:4708"
+      one_sided: "127.0.0.1:4508"
+    - two_sided: "127.0.0.1:4709"
+      one_sided: "127.0.0.1:4509"
+    - two_sided: "127.0.0.1:4710"
+      one_sided: "127.0.0.1:4510"
+    - two_sided: "127.0.0.1:4711"
+      one_sided: "127.0.0.1:4511"
+    - two_sided: "127.0.0.1:4712"
+      one_sided: "127.0.0.1:4512"
+    - two_sided: "127.0.0.1:4713"
+      one_sided: "127.0.0.1:4513"
+    - two_sided: "127.0.0.1:4714"
+      one_sided: "127.0.0.1:4514"
+    - two_sided: "127.0.0.1:4715"
+      one_sided: "127.0.0.1:4515"
+    - two_sided: "127.0.0.1:4716"
+      one_sided: "127.0.0.1:4516"
+    - two_sided: "127.0.0.1:4717"
+      one_sided: "127.0.0.1:4517"
+    - two_sided: "127.0.0.1:4718"
+      one_sided: "127.0.0.1:4518"
+    - two_sided: "127.0.0.1:4719"
+      one_sided: "127.0.0.1:4519"
 
 # Set a nonzero port to expose GET /health on the IP supplied by --addr.
 health:

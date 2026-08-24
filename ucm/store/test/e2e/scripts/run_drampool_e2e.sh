@@ -12,7 +12,7 @@ set -e
 # export ASCEND_RT_VISIBLE_DEVICES=9,10,11,12
 
 # Preload HIXL from the standard CANN installation.
-HIXL_SO="/usr/local/Ascend/cann/lib64/libcann_hixl.so"
+HIXL_SO="/home/drampool/nt/cann/lib64/libcann_hixl.so"
 export LD_PRELOAD="${HIXL_SO}"
 
 # --- 1.2 DramPool process configuration ---
