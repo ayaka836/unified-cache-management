@@ -144,15 +144,18 @@ protected:
         return entry;
     }
 
-    CompletionRecord MakeResponseRecord(KvOpcode opcode = KvOpcode::Lookup)
+    CompletionRecord MakeResponseRecord(OpType opcode = OpType::LOOKUP)
     {
         CompletionRecord record;
         record.stage = CompletionStage::SubmitResponse;
         record.request_id = kRequestId;
+        record.batch_size = 3;
         record.opcode = opcode;
         record.remote_resp_addr = 0x9000;
         record.peer_one_sided_id = kUnavailablePeer;
         record.results = {1, 0, 1};
+        record.timing.response_ready_us = SteadyNowUs();
+        record.timing.completion_queued_us = record.timing.response_ready_us;
         return record;
     }
 
@@ -180,6 +183,10 @@ TEST_F(CompletionPollerTest, FillPendingWindowHonorsConfiguredDepthAndQueueOrder
     ASSERT_EQ(poller_->pending_.size(), 2U);
     EXPECT_EQ(poller_->pending_[0].remote_resp_addr, 1U);
     EXPECT_EQ(poller_->pending_[1].remote_resp_addr, 2U);
+    EXPECT_GE(poller_->pending_[0].timing.poller_admitted_us,
+              poller_->pending_[0].timing.completion_queued_us);
+    EXPECT_GE(poller_->pending_[1].timing.poller_admitted_us,
+              poller_->pending_[1].timing.completion_queued_us);
 
     CompletionRecord remaining;
     ASSERT_TRUE(completionQueue_.TryPop(remaining));
@@ -251,8 +258,12 @@ TEST_F(CompletionPollerTest, DataStatusApiFailureAbortsDumpAndAdvancesToResponse
     ReserveEntry(key);
     CompletionRecord record;
     record.stage = CompletionStage::PollDataTransfer;
-    record.opcode = KvOpcode::Dump;
+    record.opcode = OpType::DUMP;
     record.data_handle = transport::kInvalidTransferHandle;
+    record.data_transfer_required = true;
+    record.data_transfer_submitted = true;
+    record.timing.data_transfer_submitted_us = SteadyNowUs();
+    record.timing.data_transfer_submitted_ts_us = UnixNowUs();
     record.results = {ResultCode(DumpLoadResult::Ok)};
     record.transfer_items = {
         TransferItem{0, key}
@@ -265,6 +276,14 @@ TEST_F(CompletionPollerTest, DataStatusApiFailureAbortsDumpAndAdvancesToResponse
     EXPECT_TRUE(record.transfer_items.empty());
     EXPECT_EQ(record.results, (std::vector<std::uint8_t>{ResultCode(DumpLoadResult::Failed)}));
     EXPECT_FALSE(metadata_->Query(key));
+    EXPECT_GE(record.timing.data_transfer_completed_us, record.timing.data_transfer_submitted_us);
+    EXPECT_GE(record.timing.data_transfer_completed_ts_us, record.timing.data_transfer_submitted_ts_us);
+    EXPECT_GE(record.timing.metadata_settle_completed_us, record.timing.data_transfer_completed_us);
+    EXPECT_EQ(record.timing.response_ready_us, record.timing.metadata_settle_completed_us);
+    EXPECT_FALSE(record.data_transfer_succeeded);
+    EXPECT_NE(record.timing.data_get_status.manager_entered_us, 0U);
+    EXPECT_NE(record.timing.data_get_status.manager_entered_ts_us, 0U);
+    EXPECT_EQ(record.timing.data_get_status.backend_called_us, 0U);
 }
 
 TEST_F(CompletionPollerTest, CompletedDumpPublishesReservedMetadata)
@@ -272,7 +291,7 @@ TEST_F(CompletionPollerTest, CompletedDumpPublishesReservedMetadata)
     const auto key = KeyFromHex("a2");
     ReserveEntry(key);
     CompletionRecord record;
-    record.opcode = KvOpcode::Dump;
+    record.opcode = OpType::DUMP;
     record.results = {ResultCode(DumpLoadResult::Failed)};
     record.transfer_items = {
         TransferItem{0, key}
@@ -290,7 +309,7 @@ TEST_F(CompletionPollerTest, CompletedDumpDeletesEntryWhenStoreEndFails)
     const auto key = KeyFromHex("a3");
     PublishEntry(key);
     CompletionRecord record;
-    record.opcode = KvOpcode::Dump;
+    record.opcode = OpType::DUMP;
     record.results = {ResultCode(DumpLoadResult::Ok)};
     record.transfer_items = {
         TransferItem{0, key}
@@ -308,7 +327,7 @@ TEST_F(CompletionPollerTest, FailedDumpHandlesMissingMetadataAndOutOfRangeResult
     const auto missingKey = KeyFromHex("a5");
     ReserveEntry(reservedKey);
     CompletionRecord record;
-    record.opcode = KvOpcode::Dump;
+    record.opcode = OpType::DUMP;
     record.results = {ResultCode(DumpLoadResult::Ok)};
     record.transfer_items = {
         TransferItem{0, reservedKey},
@@ -330,7 +349,7 @@ TEST_F(CompletionPollerTest, CompletedLoadReleasesReaderAndReturnsSuccess)
     ASSERT_TRUE(metadata_->LoadBegin(key, loaded).Success());
     ASSERT_EQ(entry->refCnt, 1U);
     CompletionRecord record;
-    record.opcode = KvOpcode::Load;
+    record.opcode = OpType::LOAD;
     record.results = {ResultCode(DumpLoadResult::Failed)};
     record.transfer_items = {
         TransferItem{0, key}
@@ -349,7 +368,7 @@ TEST_F(CompletionPollerTest, FailedLoadReleasesReaderButKeepsFailureResult)
     EntryPtr loaded;
     ASSERT_TRUE(metadata_->LoadBegin(key, loaded).Success());
     CompletionRecord record;
-    record.opcode = KvOpcode::Load;
+    record.opcode = OpType::LOAD;
     record.results = {ResultCode(DumpLoadResult::Ok)};
     record.transfer_items = {
         TransferItem{0, key}
@@ -364,7 +383,7 @@ TEST_F(CompletionPollerTest, FailedLoadReleasesReaderButKeepsFailureResult)
 TEST_F(CompletionPollerTest, MissingLoadMetadataRemainsFailure)
 {
     CompletionRecord record;
-    record.opcode = KvOpcode::Load;
+    record.opcode = OpType::LOAD;
     record.results = {ResultCode(DumpLoadResult::Ok)};
     record.transfer_items = {
         TransferItem{0, KeyFromHex("b3")}
@@ -398,7 +417,7 @@ TEST_F(CompletionPollerTest, SubmitResponseRejectsMissingPeerAndUnknownOpcode)
     missingPeer.peer_one_sided_id.clear();
     EXPECT_TRUE(poller_->SubmitResponse(missingPeer));
 
-    auto unknownOpcode = MakeResponseRecord(KvOpcode::None);
+    auto unknownOpcode = MakeResponseRecord(static_cast<OpType>(0xFF));
     EXPECT_TRUE(poller_->SubmitResponse(unknownOpcode));
     EXPECT_EQ(unknownOpcode.local_resp_slot.localAddr, nullptr);
 }
@@ -455,6 +474,9 @@ TEST_F(CompletionPollerTest, SubmitResponseReleasesBufferWhenRealTransportReject
 
     EXPECT_EQ(record.local_resp_slot.localAddr, nullptr);
     EXPECT_EQ(record.response_handle, transport::kInvalidTransferHandle);
+    EXPECT_NE(record.timing.response_execute_async.manager_entered_us, 0U);
+    EXPECT_NE(record.timing.response_execute_async.manager_entered_ts_us, 0U);
+    EXPECT_EQ(record.timing.response_execute_async.backend_called_us, 0U);
     BufferPool::Slot reused;
     ASSERT_TRUE(flagBufferPool_.Allocate(reused).Success());
     EXPECT_TRUE(flagBufferPool_.Free(reused.slotIndex).Success());
