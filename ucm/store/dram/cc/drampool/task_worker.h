@@ -47,7 +47,7 @@ private:
 
     void DeleteItemsMetadata(const std::vector<TransferItem>& items);
     void LoadEndItems(const std::vector<TransferItem>& items);
-    Status QueueResponse(KvOpcode opcode, std::uint64_t responseAddr,
+    Status QueueResponse(OpType opcode, std::uint64_t responseAddr,
                          const transport::ManagerID& peerOneSidedId,
                          std::vector<std::uint8_t>&& results, std::uint64_t requestId,
                          RequestTiming timing, bool dataTransferRequired, std::uint64_t dataBytes);

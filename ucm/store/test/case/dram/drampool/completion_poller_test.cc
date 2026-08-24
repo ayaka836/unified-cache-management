@@ -144,7 +144,7 @@ protected:
         return entry;
     }
 
-    CompletionRecord MakeResponseRecord(KvOpcode opcode = KvOpcode::Lookup)
+    CompletionRecord MakeResponseRecord(OpType opcode = OpType::LOOKUP)
     {
         CompletionRecord record;
         record.stage = CompletionStage::SubmitResponse;
@@ -258,7 +258,7 @@ TEST_F(CompletionPollerTest, DataStatusApiFailureAbortsDumpAndAdvancesToResponse
     ReserveEntry(key);
     CompletionRecord record;
     record.stage = CompletionStage::PollDataTransfer;
-    record.opcode = KvOpcode::Dump;
+    record.opcode = OpType::DUMP;
     record.data_handle = transport::kInvalidTransferHandle;
     record.data_transfer_required = true;
     record.data_transfer_submitted = true;
@@ -291,7 +291,7 @@ TEST_F(CompletionPollerTest, CompletedDumpPublishesReservedMetadata)
     const auto key = KeyFromHex("a2");
     ReserveEntry(key);
     CompletionRecord record;
-    record.opcode = KvOpcode::Dump;
+    record.opcode = OpType::DUMP;
     record.results = {ResultCode(DumpLoadResult::Failed)};
     record.transfer_items = {
         TransferItem{0, key}
@@ -309,7 +309,7 @@ TEST_F(CompletionPollerTest, CompletedDumpDeletesEntryWhenStoreEndFails)
     const auto key = KeyFromHex("a3");
     PublishEntry(key);
     CompletionRecord record;
-    record.opcode = KvOpcode::Dump;
+    record.opcode = OpType::DUMP;
     record.results = {ResultCode(DumpLoadResult::Ok)};
     record.transfer_items = {
         TransferItem{0, key}
@@ -327,7 +327,7 @@ TEST_F(CompletionPollerTest, FailedDumpHandlesMissingMetadataAndOutOfRangeResult
     const auto missingKey = KeyFromHex("a5");
     ReserveEntry(reservedKey);
     CompletionRecord record;
-    record.opcode = KvOpcode::Dump;
+    record.opcode = OpType::DUMP;
     record.results = {ResultCode(DumpLoadResult::Ok)};
     record.transfer_items = {
         TransferItem{0, reservedKey},
@@ -349,7 +349,7 @@ TEST_F(CompletionPollerTest, CompletedLoadReleasesReaderAndReturnsSuccess)
     ASSERT_TRUE(metadata_->LoadBegin(key, loaded).Success());
     ASSERT_EQ(entry->refCnt, 1U);
     CompletionRecord record;
-    record.opcode = KvOpcode::Load;
+    record.opcode = OpType::LOAD;
     record.results = {ResultCode(DumpLoadResult::Failed)};
     record.transfer_items = {
         TransferItem{0, key}
@@ -368,7 +368,7 @@ TEST_F(CompletionPollerTest, FailedLoadReleasesReaderButKeepsFailureResult)
     EntryPtr loaded;
     ASSERT_TRUE(metadata_->LoadBegin(key, loaded).Success());
     CompletionRecord record;
-    record.opcode = KvOpcode::Load;
+    record.opcode = OpType::LOAD;
     record.results = {ResultCode(DumpLoadResult::Ok)};
     record.transfer_items = {
         TransferItem{0, key}
@@ -383,7 +383,7 @@ TEST_F(CompletionPollerTest, FailedLoadReleasesReaderButKeepsFailureResult)
 TEST_F(CompletionPollerTest, MissingLoadMetadataRemainsFailure)
 {
     CompletionRecord record;
-    record.opcode = KvOpcode::Load;
+    record.opcode = OpType::LOAD;
     record.results = {ResultCode(DumpLoadResult::Ok)};
     record.transfer_items = {
         TransferItem{0, KeyFromHex("b3")}
@@ -417,7 +417,7 @@ TEST_F(CompletionPollerTest, SubmitResponseRejectsMissingPeerAndUnknownOpcode)
     missingPeer.peer_one_sided_id.clear();
     EXPECT_TRUE(poller_->SubmitResponse(missingPeer));
 
-    auto unknownOpcode = MakeResponseRecord(KvOpcode::None);
+    auto unknownOpcode = MakeResponseRecord(static_cast<OpType>(0xFF));
     EXPECT_TRUE(poller_->SubmitResponse(unknownOpcode));
     EXPECT_EQ(unknownOpcode.local_resp_slot.localAddr, nullptr);
 }

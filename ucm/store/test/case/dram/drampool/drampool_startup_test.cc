@@ -517,7 +517,7 @@ TEST(DramPoolServerTest, RequestReceiverLogsRequestCompletion)
         if (client.Init(clientControl).Failure()) { ::_exit(3); }
 
         KvLookupRequest request;
-        request.opcode = KvOpcode::Lookup;
+        request.opcode = OpType::LOOKUP;
         request.request_id = kRequestId;
         request.resp_addr = 0x1000;
         request.batch_size = 1;

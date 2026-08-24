@@ -249,7 +249,7 @@ bool CompletionPoller::PollDataTransfer(CompletionRecord& record)
 
 bool CompletionPoller::SubmitResponse(CompletionRecord& record)
 {
-    if (record.opcode == KvOpcode::Dump || record.opcode == KvOpcode::Load) {
+    if (record.opcode == OpType::DUMP || record.opcode == OpType::LOAD) {
         record.failed_items = static_cast<std::uint16_t>(
             std::count_if(record.results.begin(), record.results.end(), [](std::uint8_t result) {
                 return result != static_cast<std::uint8_t>(DumpLoadResult::Ok);
@@ -397,7 +397,7 @@ void CompletionPoller::SettleDataTransfer(CompletionRecord& record,
         DumpLoadResult result = DumpLoadResult::Failed;
 
         // Settle metadata and buffer ownership before completing the request item.
-        if (record.opcode == KvOpcode::Dump) {
+        if (record.opcode == OpType::DUMP) {
             if (terminalStatus == transport::TransferStatus::Completed) {
                 const auto status = runtime_.metadata.StoreEnd(item.key);
                 if (status.Success()) {
@@ -422,7 +422,7 @@ void CompletionPoller::SettleDataTransfer(CompletionRecord& record,
                         record.request_id, record.data_handle, abortStatus);
                 }
             }
-        } else if (record.opcode == KvOpcode::Load) {
+        } else if (record.opcode == OpType::LOAD) {
             const auto releaseStatus = runtime_.metadata.LoadEnd(item.key);
             if (releaseStatus.Failure()) {
                 UC_ERROR("CompletionPoller LoadEnd failed, request_id={}, handle={}, error={}",
