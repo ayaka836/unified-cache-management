@@ -8,7 +8,7 @@ transport:
   device_ids: [0, 1]
   hixl:
     listen_port: 26666
-    enable_cs: false
+    enable_hixl_cs: false
   # Cluster-wide request-channel to transport-endpoint routing.
   endpoints:
     - two_sided: "127.0.0.1:9000"

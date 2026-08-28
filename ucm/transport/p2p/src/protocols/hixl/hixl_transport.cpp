@@ -73,11 +73,12 @@ Status EncodeMetadata(HixlRole role, const std::vector<HixlInstanceInfo>& instan
         return Status::InvalidParam();
     }
     for (const auto& instance : instances) {
-        if (instance.device_id < 0 || !detail::AppendString(out, instance.endpoint.host) ||
+        if (instance.physical_device_id < 0 || !detail::AppendString(out, instance.endpoint.host) ||
             !detail::AppendU16(out, instance.endpoint.port) ||
-            !detail::AppendU32(out, static_cast<uint32_t>(instance.device_id))) {
-            UC_ERROR("[Transport][HIXL] encode instance metadata failed: engine={} device={}",
-                     instance.endpoint.ToString(), instance.device_id);
+            !detail::AppendU32(out, static_cast<uint32_t>(instance.physical_device_id))) {
+            UC_ERROR(
+                "[Transport][HIXL] encode instance metadata failed: engine={} physical_device={}",
+                instance.endpoint.ToString(), instance.physical_device_id);
             return Status::InvalidParam();
         }
     }
@@ -101,16 +102,16 @@ Status DecodeMetadata(const Metadata& in, HixlRole& role, std::vector<HixlInstan
     instances.reserve(count);
     for (uint32_t i = 0; i < count; ++i) {
         HixlInstanceInfo instance;
-        uint32_t device_id = 0;
+        uint32_t physical_device_id = 0;
         if (!detail::ReadString(in, offset, instance.endpoint.host) ||
             !detail::ReadU16(in, offset, instance.endpoint.port) ||
-            !detail::ReadU32(in, offset, device_id) ||
-            device_id > static_cast<uint32_t>(std::numeric_limits<int32_t>::max())) {
+            !detail::ReadU32(in, offset, physical_device_id) ||
+            physical_device_id > static_cast<uint32_t>(std::numeric_limits<int32_t>::max())) {
             UC_ERROR("[Transport][HIXL] decode instance metadata failed: index={} bytes={}", i,
                      in.size());
             return Status::InvalidParam();
         }
-        instance.device_id = static_cast<int32_t>(device_id);
+        instance.physical_device_id = static_cast<int32_t>(physical_device_id);
         instances.push_back(std::move(instance));
     }
     if (offset != in.size()) {
@@ -253,7 +254,8 @@ Status HixlTransport::RegisterMemory(const MemoryRegion& memory, MemoryHandle& h
     record->region = memory;
 
     for (size_t i = 0; i < instances_.size(); ++i) {
-        if (memory.type == MemoryType::Device && instances_[i]->DeviceId() != memory.device_id) {
+        if (memory.type == MemoryType::Device &&
+            instances_[i]->LogicalDeviceId() != memory.device_id) {
             continue;
         }
 
@@ -323,7 +325,8 @@ Status HixlTransport::ExportMetadata(const ManagerID&, Metadata& out)
     std::vector<HixlInstanceInfo> metadata;
     metadata.reserve(instances_.size());
     for (const auto& instance : instances_) {
-        metadata.push_back(HixlInstanceInfo{instance->LocalEndpoint(), instance->DeviceId()});
+        metadata.push_back(
+            HixlInstanceInfo{instance->LocalEndpoint(), instance->PhysicalDeviceId()});
     }
     return EncodeMetadata(role_, metadata, out);
 }
@@ -385,11 +388,11 @@ Status HixlTransport::BuildRouteLocked(const ManagerID& manager_id, Peer& peer)
     if (local_count == 1) {
         if (initiates_connection && peer.instances.size() == 1 &&
             instances_.front()->LocalEndpoint().host == remote.endpoint.host &&
-            instances_.front()->DeviceId() == remote.device_id) {
+            instances_.front()->PhysicalDeviceId() == remote.physical_device_id) {
             UC_ERROR(
                 "[Transport][HIXL] build route failed: local and remote single instances use "
                 "the same device, endpoint={} device={}",
-                remote.endpoint.ToString(), remote.device_id);
+                remote.endpoint.ToString(), remote.physical_device_id);
             return Status::Error();
         }
         peer.local_index = 0;
@@ -397,7 +400,8 @@ Status HixlTransport::BuildRouteLocked(const ManagerID& manager_id, Peer& peer)
             "[Transport][HIXL] build route peer={} local_instance=0 local_engine={} "
             "local_device={} remote_engine={} remote_device={}",
             manager_id, instances_.front()->LocalEndpoint().ToString(),
-            instances_.front()->DeviceId(), remote.endpoint.ToString(), remote.device_id);
+            instances_.front()->PhysicalDeviceId(), remote.endpoint.ToString(),
+            remote.physical_device_id);
         return Status::OK();
     }
 
@@ -412,7 +416,7 @@ Status HixlTransport::BuildRouteLocked(const ManagerID& manager_id, Peer& peer)
     for (size_t local_index = 0; local_index < local_count; ++local_index) {
         if (initiates_connection &&
             instances_[local_index]->LocalEndpoint().host == remote.endpoint.host &&
-            instances_[local_index]->DeviceId() == remote.device_id) {
+            instances_[local_index]->PhysicalDeviceId() == remote.physical_device_id) {
             continue;
         }
         if (load[local_index] < min_load) {
@@ -425,7 +429,7 @@ Status HixlTransport::BuildRouteLocked(const ManagerID& manager_id, Peer& peer)
         UC_ERROR(
             "[Transport][HIXL] build route failed: no valid local instance for endpoint={} "
             "device={}",
-            remote.endpoint.ToString(), remote.device_id);
+            remote.endpoint.ToString(), remote.physical_device_id);
         return Status::Error();
     }
 
@@ -435,7 +439,8 @@ Status HixlTransport::BuildRouteLocked(const ManagerID& manager_id, Peer& peer)
         "[Transport][HIXL] build route peer={} local_instance={} local_engine={} "
         "local_device={} remote_engine={} remote_device={}",
         manager_id, local_index, instances_[local_index]->LocalEndpoint().ToString(),
-        instances_[local_index]->DeviceId(), remote.endpoint.ToString(), remote.device_id);
+        instances_[local_index]->PhysicalDeviceId(), remote.endpoint.ToString(),
+        remote.physical_device_id);
     return Status::OK();
 }
 

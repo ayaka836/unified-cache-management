@@ -18,7 +18,7 @@ class HixlInstance;
 
 struct HixlInstanceInfo {
     Endpoint endpoint;
-    int32_t device_id = -1;
+    int32_t physical_device_id = -1;
 };
 
 class HixlTransport final : public Transport {

@@ -62,7 +62,7 @@ std::string ValidRuntimeYaml()
   device_ids: [0, 2]
   hixl:
     listen_port: 26666
-    enable_cs: true
+    enable_hixl_cs: true
   endpoints:
     - two_sided: "127.0.0.1:9000"
       one_sided: "127.0.0.1:4501"
