@@ -170,3 +170,22 @@ install(DIRECTORY include/
     COMPONENT ucm
     FILES_MATCHING PATTERN "*.h"
 )
+
+if(BUILD_UNIT_TESTS)
+    include(GoogleTest)
+    file(GLOB_RECURSE UCM_P2P_TRANSPORT_TEST_SOURCES CONFIGURE_DEPENDS "test/*.cc")
+    add_executable(ucm_p2p_transport.test
+        ${UCM_P2P_TRANSPORT_TEST_SOURCES}
+    )
+    target_include_directories(ucm_p2p_transport.test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${UCM_ROOT_DIR}/ucm/shared/infra
+    )
+    target_link_libraries(ucm_p2p_transport.test PRIVATE
+        ucm_p2p_transport
+        gtest_main
+        gtest
+    )
+    gtest_discover_tests(ucm_p2p_transport.test)
+endif()
